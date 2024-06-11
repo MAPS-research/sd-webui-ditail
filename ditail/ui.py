@@ -62,6 +62,7 @@ def ditailui(
         cont_image = gr.Image(
                             label="content image",
                             source="upload",
+                            # value='sd-webui-ditail/test_imgs/1.jpg',
                             # brush_radius=20,
                             mirror_webcam=False,
                             type="numpy",

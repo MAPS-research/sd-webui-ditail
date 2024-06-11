@@ -24,6 +24,7 @@ from ditail import (
 )
 from ditail.args import ALL_ARGS, DitailArgs
 from ditail.ui import WebuiInfo, ditailui
+from ditail.extract_features import ExtractLatent
 
 txt2img_submit_button = img2img_submit_button = None
 
@@ -44,7 +45,11 @@ class DitailScript(scripts.Script):
     def __init__(self) -> None:
         super().__init__()
         self.ultralytics_device = self.get_ultralytics_device()
-        self.img2img_image = None
+        # self.img2img_image = None
+        # self.txt2img_prompt = None
+        # self.txt2img_neg_prompt = None
+        # self.img2img_prompt = None
+        # self.img2img_neg_prompt = None
     
     def __repr__(self):
         return f"{self.__class__.__name__}(version={__version__})"
@@ -63,6 +68,15 @@ class DitailScript(scripts.Script):
             return "cpu"
 
         return ""
+    
+    def get_i(self, p) -> int:
+        iteration = p.iteration
+        batch_size = p.batch_size
+        if batch_index := getattr(p, "batch_index", None):
+            return iteration * batch_size + batch_index
+        else:
+            return iteration * batch_size + 0
+
 
     def title(self):
         return DITAIL
@@ -87,8 +101,27 @@ class DitailScript(scripts.Script):
         components, infotext_fields = ditailui(is_img2img, webui_info)
         if is_img2img:
             components[0] = self.img2img_image
+        # components = self.replace_components(components, is_img2img)
         self.infotext_fields = infotext_fields 
+        print("!! check components", components)
         return components
+
+    # def replace_components(self, components: tuple, is_img2img) -> tuple:
+    #     components = list(components)
+    #     if is_img2img:
+    #         components[0] = self.img2img_image
+    #         if components[-1]['inv_prompt'] == '':
+    #             components[-1]['inv_prompt'] = self.img2img_prompt
+    #         if components[-1]['inv_negative_prompt'] == '':
+    #             components[-1]['inv_negative_prompt'] = self.img2img_neg_prompt
+    #     else:
+    #         if components[-1]['inv_prompt'] == '':
+    #             components[-1]['inv_prompt'] = self.txt2img_prompt
+    #         if components[-1]['inv_negative_prompt'] == '':
+    #             components[-1]['inv_negative_prompt'] = self.txt2img_neg_prompt
+    #     return tuple(components)
+
+    
 
         # with gr.Accordion("Ditail", open=False):
         #     with gr.Group(visible=not is_img2img) as self.image_upload_panel:
@@ -126,21 +159,21 @@ class DitailScript(scripts.Script):
         #     return image, 
 
     
-    def is_ditail_enabled(self, *args) -> bool: 
-        src_image = args[0]
-        ditail_enabled = args[1]
-        ditail_args = [a for a in args if isinstance(a, dict)]
+    def is_ditail_enabled(self, ditail_args: DitailArgs) -> bool: 
+        # src_image = args[0]
+        # ditail_enabled = args[1]
+        # ditail_args = [a for a in args if isinstance(a, dict)]
 
-        if not args or not ditail_args:
-            message = f"""
-            !! Ditail: Invalid arguments detected.
-               input: {args!r}
-               Ditail disabled.
-            """
-            print(dedent(message), file=sys.stderr)
-            return False
+        # if not args or not ditail_args:
+        #     message = f"""
+        #     !! Ditail: Invalid arguments detected.
+        #        input: {args!r}
+        #        Ditail disabled.
+        #     """
+        #     print(dedent(message), file=sys.stderr)
+        #     return False
 
-        if not src_image:
+        if not ditail_args.src_img:
             message = f"""
             !! Ditail: No source image detected.
                Ditail disabled.
@@ -148,22 +181,57 @@ class DitailScript(scripts.Script):
             print(dedent(message), file=sys.stderr)
             return False
 
-        return ditail_enabled
+        return ditail_args.enable_ditail
+    
+
+    def replace_empty_args(self, p, ditail_args: DitailArgs) -> DitailArgs:
+        i = self.get_i(p)
+        # if ditail_args['inv_prompt'] == '':
+        #     ditail_args['inv_prompt'] = p.all_prompts[i]
+        # if ditail_args['inv_negative_prompt'] == '':
+        #     ditail_args['inv_negative_prompt'] = p.all_negative_prompts[i]
+        # return ditail_args
+        ditail_args.inv_prompt = p.all_prompts[i] if ditail_args.inv_prompt == '' else ditail_args.inv_prompt
+        ditail_args.inv_negative_prompt = p.all_negative_prompts[i] if ditail_args.inv_negative_prompt == '' else ditail_args.inv_negative_prompt
+        return ditail_args
+
 
     def process(self, p, *args):
+        print('!! get i', self.get_i(p))
 
-        print('!! check out p', dir(p))
+        # print('!! check out p', dir(p))
+        # print('!! check out p')
+        # for k in dir(p):
+        #     if k != 'sd_model':
+        #         print(k, getattr(p, k))
+        # print('!! check out p.all_prompts', p.all_prompts)
 
-        # print('!! current checkpoint', p.sd_model)
-        # print('!! check out p in process', p, type(p))
-        # # print(p.prompt)
-        print('!! check out args in process', args, type(args))
-        src_img, enable_ditail, ditail_args = args
-        if self.is_ditail_enabled(*args):
+        # print('!! check out args in process', args, type(args))
+        # src_img, enable_ditail, ditail_args = args
+
+        # map args to ditail_args
+        ditail_args = DitailArgs()
+        ditail_args.src_img, ditail_args.enable_ditail = args[0], args[1]
+        for k, v in args[2].items():
+            setattr(ditail_args, k, v)
+        
+        ditail_args = self.replace_empty_args(p, ditail_args)
+        print('!! ditail args')
+        for k, v in ditail_args.dict().items():
+            print(k, v )
+
+        if self.is_ditail_enabled(ditail_args):
             print('!! ditail enabled')
-            self.load_inv_model(ditail_args['src_model_name'])
-        else:
-            print('!! ditail disabled')
+            # overwrite empty args
+            
+            self.load_inv_model(ditail_args.src_model_name)
+
+            model = shared.sd_model
+            extract_latent = ExtractLatent()
+            extract_latent.extract(ditail_args.src_img, model, ditail_args.inv_prompt, ditail_args.inv_negative_prompt, alpha=ditail_args.ditail_alpha, beta=ditail_args.ditail_beta)
+
+        # else:
+        #     print('!! ditail disabled')
         
 
 
@@ -224,6 +292,15 @@ class DitailScript(scripts.Script):
     def after_component(self, component, **kwargs):
         if kwargs.get("elem_id") == "img2img_image":
             self.img2img_image = component
+        # if kwargs.get("elem_id") == "txt2img_prompt":
+        #     self.txt2img_prompt = component
+        # if kwargs.get("elem_id") == "img2img_prompt":
+        #     self.img2img_prompt = component
+        # if kwargs.get("elem_id") == "txt2img_neg_prompt":
+        #     self.txt2img_neg_prompt = component
+        # if kwargs.get("elem_id") == "img2img_neg_prompt":
+        #     self.img2img_neg_prompt = component
+
 
 
  

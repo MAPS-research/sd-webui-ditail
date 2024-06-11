@@ -5,6 +5,8 @@ from dataclasses import dataclass
 from functools import cached_property, partial
 from typing import Any, Literal, NamedTuple, Optional
 
+from PIL import Image
+
 import pydantic
 from pydantic import (
     BaseModel,
@@ -31,7 +33,10 @@ class ArgsList(UserList):
     def names(self) -> tuple[str]:
         return tuple(name for _, name in self)
 
-class DitailArgs(BaseModel, extra=Extra.forbid):
+class DitailArgs(BaseModel, extra=Extra.forbid, arbitrary_types_allowed = True):
+    enable_ditail: bool = False
+    src_img: Image.Image = None
+    # src_sd_model = None
     src_model_name: str = ""
     src_vae_name: str = ""
     inv_prompt: str = ""
