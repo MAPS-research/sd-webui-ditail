@@ -1,3 +1,5 @@
+import os
+
 from dataclasses import dataclass
 from functools import partial
 from types import SimpleNamespace
@@ -58,11 +60,14 @@ def ditailui(
     w = Widgets()
     eid = partial(elem_id, is_img2img=is_img2img)
 
+    print('!! check pwd', os.getcwd())
+
+
     with gr.Accordion(DITAIL, open=False, elem_id=eid("main_accordion")):
         cont_image = gr.Image(
                             label="content image",
+                            value='./extensions/sd-webui-ditail/test_imgs/bus_512.png',
                             source="upload",
-                            # value='sd-webui-ditail/test_imgs/1.jpg',
                             # brush_radius=20,
                             mirror_webcam=False,
                             type="numpy",

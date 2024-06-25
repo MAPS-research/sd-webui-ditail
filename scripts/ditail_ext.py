@@ -9,10 +9,11 @@ from typing import TYPE_CHECKING, Any, NamedTuple
 import gradio as gr
 
 import modules
-from modules import scripts
-from modules import script_callbacks
-from modules import sd_models
-from modules import shared
+import ldm.modules.diffusionmodules.openaimodel
+from modules import scripts, script_callbacks, shared, sd_models, sd_unet
+# from modules import script_callbacks
+# from modules import sd_models
+# from modules import shared
 from modules.ui_components import FormRow
 from modules.ui_common import create_refresh_button
 from modules.sd_samplers import all_samplers
@@ -25,6 +26,9 @@ from ditail import (
 from ditail.args import ALL_ARGS, DitailArgs
 from ditail.ui import WebuiInfo, ditailui
 from ditail.extract_features import ExtractLatent
+from ditail.replace_openaimodel import replace_openaimodel
+from ditail.replace_attention import apply_replacement
+
 
 txt2img_submit_button = img2img_submit_button = None
 
@@ -50,6 +54,9 @@ class DitailScript(scripts.Script):
         # self.txt2img_neg_prompt = None
         # self.img2img_prompt = None
         # self.img2img_neg_prompt = None
+
+        # apply attention replacement
+        apply_replacement()
     
     def __repr__(self):
         return f"{self.__class__.__name__}(version={__version__})"
@@ -106,23 +113,6 @@ class DitailScript(scripts.Script):
         print("!! check components", components)
         return components
 
-    # def replace_components(self, components: tuple, is_img2img) -> tuple:
-    #     components = list(components)
-    #     if is_img2img:
-    #         components[0] = self.img2img_image
-    #         if components[-1]['inv_prompt'] == '':
-    #             components[-1]['inv_prompt'] = self.img2img_prompt
-    #         if components[-1]['inv_negative_prompt'] == '':
-    #             components[-1]['inv_negative_prompt'] = self.img2img_neg_prompt
-    #     else:
-    #         if components[-1]['inv_prompt'] == '':
-    #             components[-1]['inv_prompt'] = self.txt2img_prompt
-    #         if components[-1]['inv_negative_prompt'] == '':
-    #             components[-1]['inv_negative_prompt'] = self.txt2img_neg_prompt
-    #     return tuple(components)
-
-    
-
         # with gr.Accordion("Ditail", open=False):
         #     with gr.Group(visible=not is_img2img) as self.image_upload_panel:
         #         image = gr.Image(
@@ -173,7 +163,7 @@ class DitailScript(scripts.Script):
         #     print(dedent(message), file=sys.stderr)
         #     return False
 
-        if not ditail_args.src_img:
+        if ditail_args.src_img is None:
             message = f"""
             !! Ditail: No source image detected.
                Ditail disabled.
@@ -191,6 +181,7 @@ class DitailScript(scripts.Script):
         # if ditail_args['inv_negative_prompt'] == '':
         #     ditail_args['inv_negative_prompt'] = p.all_negative_prompts[i]
         # return ditail_args
+        # TODO: check whether prompt should be str or list
         ditail_args.inv_prompt = p.all_prompts[i] if ditail_args.inv_prompt == '' else ditail_args.inv_prompt
         ditail_args.inv_negative_prompt = p.all_negative_prompts[i] if ditail_args.inv_negative_prompt == '' else ditail_args.inv_negative_prompt
         return ditail_args
@@ -216,9 +207,14 @@ class DitailScript(scripts.Script):
             setattr(ditail_args, k, v)
         
         ditail_args = self.replace_empty_args(p, ditail_args)
-        print('!! ditail args')
-        for k, v in ditail_args.dict().items():
-            print(k, v )
+        # print('!! ditail args')
+        # for k, v in ditail_args.dict().items():
+        #     print(k, v )
+
+        # # try replacing forward
+        # ldm.modules.diffusionmodules.openaimodel.UNetModel.forward = forward_with_injection
+
+        replace_openaimodel(injected_features=None)
 
         if self.is_ditail_enabled(ditail_args):
             print('!! ditail enabled')

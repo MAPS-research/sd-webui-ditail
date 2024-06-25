@@ -9,6 +9,7 @@ from PIL import Image
 from pytorch_lightning import seed_everything
 
 from ditail.utils import create_path
+from modules.shared import device
 from ldm.models.diffusion.ddim import DDIMSampler
 
 class DDIMInverse(DDIMSampler):
@@ -18,10 +19,9 @@ class DDIMInverse(DDIMSampler):
     def encode_ddim(self, 
                     img, 
                     num_steps, 
-                    conditioning, 
-                    unconditional_conditioning, 
-                    unconditional_guidance_scale
+                    conditioning,
         ):
+        self.latents = {}
         print(f"Running DDIM inversion with {num_steps} steps")
         T = 999
         c = T // num_steps
@@ -86,9 +86,11 @@ class ExtractLatent:
         # self.sampler = DDIMSampler(self.model)
         # self.seed = seed
         # self.save_feature_timesteps = ddim_steps
-        self.outpath = create_path("features") #TODO: change this to a parameter
+        self.outpath = create_path("./extensions/sd-webui-ditail/features") #TODO: change this to a parameter
         self.sample_path = create_path(os.path.join(self.outpath, "samples"))
         self.precision_scope = autocast
+        self.device = device
+        print('!! extract latent device is', self.device)
 
         # seed_everything(seed)
         pass
@@ -104,26 +106,26 @@ class ExtractLatent:
         sampler = DDIMInverse(model)
 
         # uc = model.get_learned_conditioning([""])
-        pos_c = model.get_learned_conditioning(positive_prompt)
-        print('!! pos_c', pos_c.shape)
-        neg_c = model.get_learned_conditioning(negative_prompt)
-        print('!! neg_c', neg_c.shape)
+        # TODO: setting prompt inside a list is a hack, check if this is necessary
+        pos_c = model.get_learned_conditioning([positive_prompt])
+        neg_c = model.get_learned_conditioning([negative_prompt])
         c = alpha * pos_c - beta * neg_c
-        print('!! c', c)
+        print('!! c shape', c.shape)
         # shape = [C, H//f, W//f]
 
         z_enc = None
+        # turn init_image to tensor
+        init_image = torch.from_numpy(init_image).permute(2, 0, 1).unsqueeze(0).float().to(self.device)
         init_latent = model.get_first_stage_encoding(model.encode_first_stage(init_image))
+        print('!! init_latent shape', init_latent.shape)
         ddim_inversion_steps = 999
         z_enc, _ = sampler.encode_ddim(
             init_latent, 
             num_steps=ddim_inversion_steps, 
-            conditoning=c, 
-            # unconditional_conditioning=uc, 
-            # unconditional_guidance_scale=cfgscale, #TODO: check cfg scale
+            conditioning=c, 
         ) 
 
-        torch.save(z_enc, os.path.join(self.outpath, "latent.pt"))
-        print('latent saved')
+        torch.save(z_enc, os.path.join(self.outpath, "z_enc.pt"))
+        print('z_enc saved')
 
 
