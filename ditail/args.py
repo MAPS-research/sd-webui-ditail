@@ -41,6 +41,7 @@ class DitailArgs(BaseModel, extra=Extra.forbid, arbitrary_types_allowed = True):
     src_vae_name: str = ""
     inv_prompt: str = ""
     inv_negative_prompt: str = ""
+    inv_steps: int = 1000 # will match the generation steps in main ui later
     ditail_alpha: confloat(ge=0.0, le=10.0) = 3.0
     ditail_beta: confloat(ge=0.0, le=10.0) = 0.5
     is_api: bool = True

@@ -1,4 +1,5 @@
 import contextlib
+import copy
 import os
 import sys
 import platform
@@ -7,17 +8,18 @@ from textwrap import dedent
 from typing import TYPE_CHECKING, Any, NamedTuple
 
 import gradio as gr
+import pickle
+import torch
+from tqdm import tqdm
 
 import modules
 import ldm.modules.diffusionmodules.openaimodel
-from modules import scripts, script_callbacks, shared, sd_models, sd_unet
-# from modules import script_callbacks
-# from modules import sd_models
-# from modules import shared
+from modules import scripts, script_callbacks, shared, sd_models, sd_samplers, sd_unet, safe
 from modules.ui_components import FormRow
 from modules.ui_common import create_refresh_button
-from modules.sd_samplers import all_samplers
+# from modules.sd_samplers import all_samplers
 from modules.shared import cmd_opts, opts, state
+
 
 from ditail import (
     DITAIL,
@@ -26,8 +28,9 @@ from ditail import (
 from ditail.args import ALL_ARGS, DitailArgs
 from ditail.ui import WebuiInfo, ditailui
 from ditail.extract_features import ExtractLatent
-from ditail.replace_openaimodel import replace_openaimodel
-from ditail.replace_attention import apply_replacement
+from ditail.replace_openaimodel import apply_openaimodel_replacement, UNetModelWithInjection
+from ditail.replace_attention import apply_attention_replacement
+from ditail.utils import create_path
 
 
 txt2img_submit_button = img2img_submit_button = None
@@ -56,7 +59,10 @@ class DitailScript(scripts.Script):
         # self.img2img_neg_prompt = None
 
         # apply attention replacement
-        apply_replacement()
+        apply_attention_replacement()
+        apply_openaimodel_replacement()
+
+        # replace_openaimodel(injected_features=None)
     
     def __repr__(self):
         return f"{self.__class__.__name__}(version={__version__})"
@@ -184,13 +190,20 @@ class DitailScript(scripts.Script):
         # TODO: check whether prompt should be str or list
         ditail_args.inv_prompt = p.all_prompts[i] if ditail_args.inv_prompt == '' else ditail_args.inv_prompt
         ditail_args.inv_negative_prompt = p.all_negative_prompts[i] if ditail_args.inv_negative_prompt == '' else ditail_args.inv_negative_prompt
+        ditail_args.inv_steps = p.steps
         return ditail_args
 
 
     def process(self, p, *args):
         print('!! get i', self.get_i(p))
 
+        sampler_config = sd_samplers.find_sampler_config(p.sampler_name)
+        total_steps = sampler_config.total_steps(p.steps)
+        print('!! total sampler steps', total_steps)
+
+
         # print('!! check out p', dir(p))
+        # print('!! check out p.steps', p.steps)
         # print('!! check out p')
         # for k in dir(p):
         #     if k != 'sd_model':
@@ -207,29 +220,35 @@ class DitailScript(scripts.Script):
             setattr(ditail_args, k, v)
         
         ditail_args = self.replace_empty_args(p, ditail_args)
-        # print('!! ditail args')
-        # for k, v in ditail_args.dict().items():
-        #     print(k, v )
+
 
         # # try replacing forward
         # ldm.modules.diffusionmodules.openaimodel.UNetModel.forward = forward_with_injection
-
-        replace_openaimodel(injected_features=None)
+        
 
         if self.is_ditail_enabled(ditail_args):
             print('!! ditail enabled')
             # overwrite empty args
             
             self.load_inv_model(ditail_args.src_model_name)
-
             model = shared.sd_model
-            extract_latent = ExtractLatent()
-            extract_latent.extract(ditail_args.src_img, model, ditail_args.inv_prompt, ditail_args.inv_negative_prompt, alpha=ditail_args.ditail_alpha, beta=ditail_args.ditail_beta)
 
-        # else:
-        #     print('!! ditail disabled')
-        
+            latent_save_path = create_path("./extensions/sd-webui-ditail/features")
+            self.extract_feature_maps(ditail_args, model, latent_save_path)
 
+            # injected_features = self.load_target_features(ditail_args, latent_save_path)
+            # print('!!loaded injectd features', injected_features)
+            # print('!! loaded injected features', len(injected_features))
+            # p.sd_model.forward = partial(p.sd_model.forward, injected_features=injected_features)
+            # UNetModelWithInjection.forward = partial(copy.deepcopy(UNetModelWithInjection.forward), injected_features=injected_features)
+            
+
+            # simple_tensor = torch.randn(10, 10)
+            # torch.save(simple_tensor, os.path.join(latent_save_path, 'simple_tensor.pt'))
+            # with safe.Extra(self.extra_handler):
+            # # x = torch.load('model.pt')
+            #     loaded_tensor = torch.load(os.path.join(latent_save_path, 'simple_tensor.pt'))
+            #     print('!! loaded tensor', loaded_tensor)
 
     def load_inv_model(self, checkpoint_name):
 
@@ -260,6 +279,62 @@ class DitailScript(scripts.Script):
         #         # send_text_button.click(fn=send_text_to_prompt, inputs=[text_to_be_sent, self.boxx, negative_text_to_be_sent, self.neg_prompt_boxTXT], outputs=[self.boxx, self.neg_prompt_boxTXT])
 
         # return [text_to_be_sent, send_text_button]
+    
+    def extract_feature_maps(self, ditail_args: DitailArgs, model, latent_save_path, seed=42):
+        extracter = ExtractLatent(latent_save_path)
+        latents, z_enc = extracter.extract(
+                init_image=ditail_args.src_img,
+                model=model,
+                positive_prompt=ditail_args.inv_prompt,
+                negative_prompt=ditail_args.inv_negative_prompt,
+                alpha=ditail_args.ditail_alpha,
+                beta=ditail_args.ditail_beta,
+                seed=42,
+                ddim_inversion_steps=ditail_args.inv_steps,
+            )
+        
+        # with open(os.path.join(latent_save_path, 'latents_tmp.pkl'), 'wb') as f:
+        #     pickle.dump(latents, f)
+        # save z_enc
+        torch.save(z_enc, os.path.join(latent_save_path, 'z_enc.pt'))
+
+    def load_target_features(self, ditail_args: DitailArgs, latent_save_path):
+        self_attn_output_block_indices = [4,5,6,7,8,9,10,11]
+        out_layers_output_block_indices = [4]
+        output_block_self_attn_map_injection_thresholds = [ditail_args.inv_steps // 2] * len(self_attn_output_block_indices)
+        feature_injection_thresholds = [int(ditail_args.inv_steps * 1.0)] # TODO: should be one of the arguments, change later
+        target_features = []
+
+        T = 999
+        c = T // ditail_args.inv_steps
+
+        iterator = tqdm(reversed(range(0, T, c)), desc="DDIM inversion", total = ditail_args.inv_steps)
+        
+        for i, t in enumerate(iterator):
+            current_features = {}
+            for (output_block_idx, output_block_self_attn_map_injection_threshold) in zip(self_attn_output_block_indices, output_block_self_attn_map_injection_thresholds):
+                if i <= int(output_block_self_attn_map_injection_threshold):
+                    output_q = torch.load(os.path.join(latent_save_path, f"output_block_{output_block_idx}_self_attn_q_time_{t}.pt"))
+                    output_k = torch.load(os.path.join(latent_save_path, f"output_block_{output_block_idx}_self_attn_k_time_{t}.pt"))
+                    current_features[f"output_block_{output_block_idx}_self_attn_q"] = output_q
+                    current_features[f"output_block_{output_block_idx}_self_attn_k"] = output_k
+                
+            for (output_block_idx, feature_injection_threshold) in zip(out_layers_output_block_indices, feature_injection_thresholds):
+                if i <= int(feature_injection_threshold):
+                    output = torch.load(os.path.join(latent_save_path, f"output_block_{output_block_idx}_out_layers_features_time_{t}.pt"))
+                    current_features[f"output_block_{output_block_idx}_out_layers"] = output
+
+            target_features.append(current_features)
+        return target_features
+    
+    def extra_handler(module, name):
+        print(f'!!extra handler for {name} in {module} is called')
+        if module == 'torch' and name == 'Tensor':
+            return torch.Tensor
+        return None
+
+
+        
 
 
     # def after_component(self, component, **kwargs):
@@ -298,8 +373,5 @@ class DitailScript(scripts.Script):
         #     self.img2img_neg_prompt = component
 
 
-
- 
-
-
-
+# def new_forward(self, x, timesteps=None, context=None, y=None, injected_features=None, **kwargs):
+#     return UNetModelWithInjection.forward(self, x=x, timesteps=timesteps, context=context, y=y, injected_features=injected_features, **kwargs)

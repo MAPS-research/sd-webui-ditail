@@ -1,2 +1,3 @@
-scripts/__pycache__/
+features/
 .DS_Store
+**/__pycache__/

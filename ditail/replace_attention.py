@@ -1,4 +1,6 @@
 import math
+import pdb
+
 import torch
 import torch.nn.functional as F
 from torch import nn, einsum
@@ -9,13 +11,18 @@ from ldm.modules.diffusionmodules.util import checkpoint
 from ldm.modules.attention import (
     exists, default, 
     CrossAttention, MemoryEfficientCrossAttention, BasicTransformerBlock, SpatialTransformer, 
-    FeedForward, XFORMERS_IS_AVAILBLE
+    FeedForward, XFORMERS_IS_AVAILBLE, _ATTN_PRECISION
     )
  
 
 class CrossAttentionWithInjection(CrossAttention):
     def __init__(self, query_dim, context_dim=None, heads=8, dim_head=64, dropout=0.):
         super().__init__(query_dim=query_dim, context_dim=context_dim, heads=heads, dim_head=dim_head, dropout=dropout)
+        self.attn = None
+        self.q = None
+        self.k = None
+        self.v = None
+
 
     def forward(self, x, context=None, mask=None, q_injected=None, k_injected=None):
         print('!!!! CrossAttentionWithInjection forward called')
@@ -23,7 +30,9 @@ class CrossAttentionWithInjection(CrossAttention):
         h = self.heads
         b = x.shape[0] // 2
         if q_injected is None:
+            print('!!!! running to_q in CrossAttentionWithInjection')
             q = self.to_q(x)
+            print('!!!! q shape', q.shape)
             q = rearrange(q, 'b n (h d) -> (b h) n d', h=h)
         else:
             q_uncond, q_cond = q_injected.chunk(2)
@@ -39,6 +48,10 @@ class CrossAttentionWithInjection(CrossAttention):
         
         v = self.to_v(context)
         v = rearrange(v, 'b m (h d) -> (b h) m d', h=h)
+
+        self.q = q
+        self.k = k
+        self.v = v
 
         # TODO: check whether this will cause error
         # force cast to fp32 to avoid overflowing
@@ -58,9 +71,11 @@ class CrossAttentionWithInjection(CrossAttention):
             sim.masked_fill_(~mask, max_neg_value)
 
         # attention, what we cannot get enough of
-        sim = sim.softmax(dim=-1)
+        attn = sim.softmax(dim=-1)
+        
+        self.attn = attn
 
-        out = einsum('b i j, b j d -> b i d', sim, v)
+        out = einsum('b i j, b j d -> b i d', attn, v)
         out = rearrange(out, '(b h) n d -> b n (h d)', h=h)
         return self.to_out(out)
 
@@ -102,21 +117,43 @@ class BasicTransformerBlockWithInjection(nn.Module):
             )
 
     def _forward(self, x, context=None, self_attn_q_injected=None, self_attn_k_injected=None):
+        print('!!!! BasicTransformerBlockWithInjection _forward called')
         x = self.attn1(self.norm1(x),
                        q_injected=self_attn_q_injected,
-                       k_injected=self_attn_k_injected) + x
+                       k_injected=self_attn_k_injected,
+                       context=context if self.disable_self_attn else None) + x
         x = self.attn2(self.norm2(x), context=context) + x
         x = self.ff(self.norm3(x)) + x
         return x
 
 
 class SpatialTransformerWithInjection(SpatialTransformer):
-    def __init__(self, in_channels, n_heads, d_head,
-                 depth=1, dropout=0., context_dim=None):
-        super().__init__(in_channels, n_heads, d_head, 
-                         depth=depth, dropout=dropout, context_dim=context_dim)
+    def __init__(
+        self, 
+        in_channels, 
+        n_heads,
+        d_head,depth=1, 
+        dropout=0., 
+        context_dim=None,
+        disable_self_attn=False,
+        use_linear=False,
+        use_checkpoint=False
+    ):
+        super().__init__(
+            in_channels=in_channels, 
+            n_heads=n_heads,
+            d_head=d_head,
+            depth=depth, 
+            dropout=dropout, 
+            context_dim=context_dim,
+            disable_self_attn=disable_self_attn,
+            use_linear=use_linear,
+            use_checkpoint=use_checkpoint
+            )
+        print("!!!! SpatialTransformerWithInjection initialized")
     
     def forward(self, x, context=None, self_attn_q_injected=None, self_attn_k_injected=None):
+        # pdb.set_trace()
         print('!!!! SpatialTransformerWithInjection forward called')
         # note: if no context is given, cross-attention defaults to self-attention
         if not isinstance(context, list):
@@ -146,7 +183,7 @@ class SpatialTransformerWithInjection(SpatialTransformer):
 
 
 
-def apply_replacement():
+def apply_attention_replacement():
     print('!!!! Applying replacement')
     ldm.modules.attention.CrossAttention = CrossAttentionWithInjection
     ldm.modules.attention.BasicTransformerBlock = BasicTransformerBlockWithInjection
