@@ -28,8 +28,6 @@ from ditail import (
 from ditail.args import ALL_ARGS, DitailArgs
 from ditail.ui import WebuiInfo, ditailui
 from ditail.extract_features import ExtractLatent
-from ditail.replace_openaimodel import apply_openaimodel_replacement, UNetModelWithInjection
-from ditail.replace_attention import apply_attention_replacement
 from ditail.utils import create_path
 
 
@@ -52,17 +50,6 @@ class DitailScript(scripts.Script):
     def __init__(self) -> None:
         super().__init__()
         self.ultralytics_device = self.get_ultralytics_device()
-        # self.img2img_image = None
-        # self.txt2img_prompt = None
-        # self.txt2img_neg_prompt = None
-        # self.img2img_prompt = None
-        # self.img2img_neg_prompt = None
-
-        # apply attention replacement
-        apply_attention_replacement()
-        apply_openaimodel_replacement()
-
-        # replace_openaimodel(injected_features=None)
     
     def __repr__(self):
         return f"{self.__class__.__name__}(version={__version__})"
@@ -119,58 +106,10 @@ class DitailScript(scripts.Script):
         print("!! check components", components)
         return components
 
-        # with gr.Accordion("Ditail", open=False):
-        #     with gr.Group(visible=not is_img2img) as self.image_upload_panel:
-        #         image = gr.Image(
-        #                         label="content image",
-        #                         source="upload",
-        #                         brush_radius=20,
-        #                         mirror_webcam=False,
-        #                         type="numpy",
-        #                         tool="sketch",
-        #                         elem_id="input_image",
-        #                         elem_classes=["ditail-image"],
-        #                         brush_color=shared.opts.img2img_inpaint_mask_brush_color
-        #                         if hasattr(
-        #                             shared.opts, "img2img_inpaint_mask_brush_color"
-        #                         )
-        #                         else None,
-        #                     )
-        #     self.enabled = gr.Checkbox(label="Enable", default=False)
-        #     with FormRow(elem_id="ditail_src_model"):
-        #         self.src_model_name = gr.Dropdown(sd_models.checkpoint_tiles(), elem_id="ditail_src_model_name", label="Source Checkpoint")
-        #         create_refresh_button(self.src_model_name, sd_models.list_models, lambda: {"choices": sd_models.checkpoint_tiles()}, "refresh_src_checkpoint")
-        #         print("!! sampler when creating ditail ui", self.sampler_name)
-        #         print("!! src model name when creating ditail ui", self.src_model_name)
-        #         # self.src_model_name.change(fn=self.load_inv_model, inputs=[self.src_model_name, self.sampler_name])
-                
- 
-        #     with gr.Row(elem_id="ditail_prompt_weight"):
-        #         self.ditail_alpha = gr.Slider(minimum=0.0, maximum=10.0, value=3.0, step=0.1, label="positive prompt scaling weight (alpha)", elem_id="ditail_alpha", interactive=True)
-        #         self.ditail_beta = gr.Slider(minimum=0.0, maximum=10.0, value=0.5, step=0.1, label="negative prompt scaling weight (beta)", elem_id="ditail_beta", interactive=True)
-        #     # text_to_be_sent = gr.Textbox(label="drop text")
-        #     # negative_text_to_be_sent = gr.Textbox(label="drop negative text")
-        #     # send_text_button = gr.Button(value='send text', variant='primary')
-        #     print('!! device', shared.device)
-        #     return image, 
-
     
     def is_ditail_enabled(self, ditail_args: DitailArgs) -> bool: 
-        # src_image = args[0]
-        # ditail_enabled = args[1]
-        # ditail_args = [a for a in args if isinstance(a, dict)]
-
-        # if not args or not ditail_args:
-        #     message = f"""
-        #     !! Ditail: Invalid arguments detected.
-        #        input: {args!r}
-        #        Ditail disabled.
-        #     """
-        #     print(dedent(message), file=sys.stderr)
-        #     return False
-
         if ditail_args.src_img is None:
-            message = f"""
+            message = """
             !! Ditail: No source image detected.
                Ditail disabled.
             """
@@ -182,11 +121,6 @@ class DitailScript(scripts.Script):
 
     def replace_empty_args(self, p, ditail_args: DitailArgs) -> DitailArgs:
         i = self.get_i(p)
-        # if ditail_args['inv_prompt'] == '':
-        #     ditail_args['inv_prompt'] = p.all_prompts[i]
-        # if ditail_args['inv_negative_prompt'] == '':
-        #     ditail_args['inv_negative_prompt'] = p.all_negative_prompts[i]
-        # return ditail_args
         # TODO: check whether prompt should be str or list
         ditail_args.inv_prompt = p.all_prompts[i] if ditail_args.inv_prompt == '' else ditail_args.inv_prompt
         ditail_args.inv_negative_prompt = p.all_negative_prompts[i] if ditail_args.inv_negative_prompt == '' else ditail_args.inv_negative_prompt
@@ -220,11 +154,6 @@ class DitailScript(scripts.Script):
             setattr(ditail_args, k, v)
         
         ditail_args = self.replace_empty_args(p, ditail_args)
-
-
-        # # try replacing forward
-        # ldm.modules.diffusionmodules.openaimodel.UNetModel.forward = forward_with_injection
-        
 
         if self.is_ditail_enabled(ditail_args):
             print('!! ditail enabled')
@@ -297,6 +226,7 @@ class DitailScript(scripts.Script):
         #     pickle.dump(latents, f)
         # save z_enc
         torch.save(z_enc, os.path.join(latent_save_path, 'z_enc.pt'))
+        torch.save(latents, os.path.join(latent_save_path, 'latents.pt'))
 
     def load_target_features(self, ditail_args: DitailArgs, latent_save_path):
         self_attn_output_block_indices = [4,5,6,7,8,9,10,11]
@@ -334,8 +264,6 @@ class DitailScript(scripts.Script):
         return None
 
 
-        
-
 
     # def after_component(self, component, **kwargs):
     #     #https://github.com/AUTOMATIC1111/stable-diffusion-webui/pull/7456#issuecomment-1414465888 helpfull link
@@ -371,7 +299,3 @@ class DitailScript(scripts.Script):
         #     self.txt2img_neg_prompt = component
         # if kwargs.get("elem_id") == "img2img_neg_prompt":
         #     self.img2img_neg_prompt = component
-
-
-# def new_forward(self, x, timesteps=None, context=None, y=None, injected_features=None, **kwargs):
-#     return UNetModelWithInjection.forward(self, x=x, timesteps=timesteps, context=context, y=y, injected_features=injected_features, **kwargs)

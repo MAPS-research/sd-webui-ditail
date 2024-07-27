@@ -20,7 +20,7 @@ class DDIMInverse(DDIMSampler):
                     img, 
                     num_steps, 
                     conditioning,
-                    save_feature_maps_callback=None,
+                    # save_feature_maps_callback=None,
         ):
         latents = {}
         print(f"Running DDIM inversion with {num_steps} steps")
@@ -37,7 +37,7 @@ class DDIMInverse(DDIMSampler):
             latents[t] = img
 
             # print('!! check model', self.model, self.model.model.__dict__.keys())
-            save_feature_maps_callback(self.model.model.diffusion_model, t)
+            # save_feature_maps_callback(self.model.model.diffusion_model, t)
 
         return latents, img
 
@@ -109,31 +109,31 @@ class ExtractLatent:
         # seed_everything(seed)
         pass
 
-    def save_feature_maps_callback(self, model, i):
-        self.save_feature_maps(model.output_blocks, i, "output_block") 
+    # def save_feature_maps_callback(self, model, i):
+    #     self.save_feature_maps(model.output_blocks, i, "output_block") 
 
-    def save_feature_maps(self, blocks, i, feature_type="input_block"):
-        block_idx = 0
-        for block in tqdm(blocks, desc="Saving input blocks feature maps"):
-            # if not opt.save_all_features and block_idx < 4:
-            if block_idx < 4:
-                block_idx += 1
-                continue
-            if "ResBlock" in str(type(block[0])):
-                # if opt.save_all_features or block_idx == 4:
-                if block_idx == 4:
-                    print('!! check block 0', type(block[0]), block[0].__dict__)
-                    self.save_feature_map(block[0].in_layers_features, f"{feature_type}_{block_idx}_in_layers_features_time_{i}")
-                    self.save_feature_map(block[0].out_layers_features, f"{feature_type}_{block_idx}_out_layers_features_time_{i}")
+    # def save_feature_maps(self, blocks, i, feature_type="input_block"):
+    #     block_idx = 0
+    #     for block in tqdm(blocks, desc="Saving input blocks feature maps"):
+    #         # if not opt.save_all_features and block_idx < 4:
+    #         if block_idx < 4:
+    #             block_idx += 1
+    #             continue
+    #         if "ResBlock" in str(type(block[0])):
+    #             # if opt.save_all_features or block_idx == 4:
+    #             if block_idx == 4:
+    #                 print('!! check block 0', type(block[0]), block[0].__dict__)
+    #                 self.save_feature_map(block[0].in_layers_features, f"{feature_type}_{block_idx}_in_layers_features_time_{i}")
+    #                 self.save_feature_map(block[0].out_layers_features, f"{feature_type}_{block_idx}_out_layers_features_time_{i}")
 
-            if len(block) > 1 and "SpatialTransformer" in str(type(block[1])):
-                self.save_feature_map(block[1].transformer_blocks[0].attn1.to_k, f"{feature_type}_{block_idx}_self_attn_k_time_{i}")
-                self.save_feature_map(block[1].transformer_blocks[0].attn1.to_q, f"{feature_type}_{block_idx}_self_attn_q_time_{i}")
-            block_idx += 1
+    #         if len(block) > 1 and "SpatialTransformer" in str(type(block[1])):
+    #             self.save_feature_map(block[1].transformer_blocks[0].attn1.to_k, f"{feature_type}_{block_idx}_self_attn_k_time_{i}")
+    #             self.save_feature_map(block[1].transformer_blocks[0].attn1.to_q, f"{feature_type}_{block_idx}_self_attn_q_time_{i}")
+    #         block_idx += 1
     
-    def save_feature_map(self, feature_map, filename):
-        save_path = os.path.join(self.outpath, f"{filename}.pt")
-        torch.save(feature_map, save_path)
+    # def save_feature_map(self, feature_map, filename):
+    #     save_path = os.path.join(self.outpath, f"{filename}.pt")
+    #     torch.save(feature_map, save_path)
 
     @torch.inference_mode()
     def extract(self, init_image, model, positive_prompt, negative_prompt, alpha=3.0, beta=0.5, seed=42, ddim_inversion_steps=999, save_feature_timesteps=60, H=512, W=512, C=4, f=8, cfgscale=7.5):
@@ -163,7 +163,7 @@ class ExtractLatent:
             init_latent, 
             num_steps=ddim_inversion_steps, 
             conditioning=c, 
-            save_feature_maps_callback=self.save_feature_maps_callback,
+            # save_feature_maps_callback=self.save_feature_maps_callback,
         ) 
 
         return latents, z_enc
