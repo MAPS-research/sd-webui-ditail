@@ -30,9 +30,9 @@ class CrossAttentionWithInjection(CrossAttention):
         h = self.heads
         b = x.shape[0] // 2
         if q_injected is None:
-            print('!!!! running to_q in CrossAttentionWithInjection')
+            # print('!!!! running to_q in CrossAttentionWithInjection')
             q = self.to_q(x)
-            print('!!!! q shape', q.shape)
+            # print('!!!! q shape', q.shape)
             q = rearrange(q, 'b n (h d) -> (b h) n d', h=h)
         else:
             q_uncond, q_cond = q_injected.chunk(2)
@@ -108,7 +108,7 @@ class BasicTransformerBlockWithInjection(nn.Module):
         self.checkpoint = checkpoint
 
     def forward(self, x, context=None, self_attn_q_injected=None, self_attn_k_injected=None):
-        print('!!!! BasicTransformerBlockWithInjection forward called')
+        # print('!!!! BasicTransformerBlockWithInjection forward called')
         return checkpoint(
             self._forward, 
             (x, context, self_attn_q_injected, self_attn_k_injected),
@@ -117,7 +117,7 @@ class BasicTransformerBlockWithInjection(nn.Module):
             )
 
     def _forward(self, x, context=None, self_attn_q_injected=None, self_attn_k_injected=None):
-        print('!!!! BasicTransformerBlockWithInjection _forward called')
+        # print('!!!! BasicTransformerBlockWithInjection _forward called')
         x = self.attn1(self.norm1(x),
                        q_injected=self_attn_q_injected,
                        k_injected=self_attn_k_injected,

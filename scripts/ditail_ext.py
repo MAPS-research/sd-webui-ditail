@@ -11,15 +11,19 @@ import gradio as gr
 import pickle
 import torch
 from tqdm import tqdm
+from PIL import Image
 
 import modules
 import ldm.modules.diffusionmodules.openaimodel
 from modules import scripts, script_callbacks, shared, sd_models, sd_samplers, sd_unet, safe
 from modules.ui_components import FormRow
 from modules.ui_common import create_refresh_button
-# from modules.sd_samplers import all_samplers
+from modules.sd_samplers import all_samplers, get_sampler_and_scheduler, all_samplers_map
+from modules.sd_schedulers import schedulers_map
 from modules.shared import cmd_opts, opts, state
-
+from modules.processing import StableDiffusionProcessingImg2Img, StableDiffusionProcessingTxt2Img, StableDiffusionProcessing
+from modules.sd_samplers_kdiffusion import samplers_k_diffusion, k_diffusion_samplers_map
+from modules.sd_samplers_timesteps import CompVisSampler
 
 from ditail import (
     DITAIL,
@@ -28,6 +32,7 @@ from ditail import (
 from ditail.args import ALL_ARGS, DitailArgs
 from ditail.ui import WebuiInfo, ditailui
 from ditail.extract_features import ExtractLatent
+from ditail.register_forward import register_attn_inj, register_conv_inj, register_time
 from ditail.utils import create_path
 
 
@@ -50,11 +55,12 @@ class DitailScript(scripts.Script):
     def __init__(self) -> None:
         super().__init__()
         self.ultralytics_device = self.get_ultralytics_device()
+        self.latents = None
+        self.z_enc = None
     
     def __repr__(self):
         return f"{self.__class__.__name__}(version={__version__})"
         
-    
     @staticmethod
     def get_ultralytics_device() -> str:
         if "adetailer" in shared.cmd_opts.use_cpu:
@@ -125,27 +131,71 @@ class DitailScript(scripts.Script):
         ditail_args.inv_prompt = p.all_prompts[i] if ditail_args.inv_prompt == '' else ditail_args.inv_prompt
         ditail_args.inv_negative_prompt = p.all_negative_prompts[i] if ditail_args.inv_negative_prompt == '' else ditail_args.inv_negative_prompt
         ditail_args.inv_steps = p.steps
+
+        # replace sampler and scheduler as p for now, maybe allow user to change it later
+        ditail_args.inv_sampler_name = p.sampler_name
+        ditail_args.inv_scheduler_name = p.scheduler
+
         return ditail_args
+    
+    
+    def get_scheduler_timesteps(self, p, sampler_name, scheduler_name):
+        sampler_name, scheduler_name = get_sampler_and_scheduler(sampler_name, scheduler_name)
+
+        # print('!! sampler name', p.sampler, self.sampler_name, sampler_name, scheduler_name)
+
+        sampler = all_samplers_map.get(sampler_name)
+        sampler_class = sampler.constructor(shared.sd_model)
+        sampler_class.config = sampler
+
+        if isinstance(sampler_class, CompVisSampler):
+            timesteps_sched = sampler_class.get_timesteps(p, p.steps)
+            sigmas_sched = None
+        else:
+            sigmas_sched = sampler_class.get_sigmas(p, p.steps)
+            timesteps_sched = [sampler_class.model_wrap.sigma_to_t(s) for s in sigmas_sched]
+
+        return timesteps_sched, sigmas_sched
+        # print('!! sampler', sampler)
+
+        # print('!! sampler and scheduler name', sampler_name, scheduler_name)
+        # if scheduler_name == 'Automatic':
+        #     scheduler = schedulers_map.get('uniform')
+        #     sampler_row = [row for row in samplers_k_diffusion if row[0] == sampler_name]
+        #     if len(sampler_row) > 0:
+        #         options = sampler_row[0][3]
+        #         if options.get('scheduler', False):
+        #             scheduler = schedulers_map.get(options['scheduler'])
+        # scheduler = scheduler
+
+        # print('!! device check', sigmas.device)
+
+        # print('!! scheduler', scheduler, type(scheduler))
+        # sigmas_sched = scheduler.function(p.steps, sigma_min=min(sigmas), sigma_max=max(sigmas), device=shared.device)
+        # timestep_sched = [sampler_class.model_wrap.sigma_to_t(s) for s in sigmas_sched]
+        # print('!! timestep_sched', timestep_sched)
+        # # print('!! timesteps', scheduler.function(p.steps, sigma_min=min(sigmas), sigma_max=max(sigmas), device=shared.device))
+
+        # return scheduler.function(p.steps, sigma_min=min(sigmas), sigma_max=max(sigmas), device=shared.device)
 
 
     def process(self, p, *args):
+        # model_structure = str(shared.sd_model)
+        # with open('./extensions/sd-webui-ditail/scripts/model_structure.txt', 'w') as f:
+        #     f.write(model_structure)
+
+        # print('!! p', type(p))'
+        # print(!!'opts', opts.scheduler, type(opts))
+
+        # force change sampler to DDIM
+        p.sampler_name = "DDIM"
+
         print('!! get i', self.get_i(p))
+        shared.sd_model.cond_stage_key = "edit"
 
         sampler_config = sd_samplers.find_sampler_config(p.sampler_name)
         total_steps = sampler_config.total_steps(p.steps)
         print('!! total sampler steps', total_steps)
-
-
-        # print('!! check out p', dir(p))
-        # print('!! check out p.steps', p.steps)
-        # print('!! check out p')
-        # for k in dir(p):
-        #     if k != 'sd_model':
-        #         print(k, getattr(p, k))
-        # print('!! check out p.all_prompts', p.all_prompts)
-
-        # print('!! check out args in process', args, type(args))
-        # src_img, enable_ditail, ditail_args = args
 
         # map args to ditail_args
         ditail_args = DitailArgs()
@@ -155,29 +205,43 @@ class DitailScript(scripts.Script):
         
         ditail_args = self.replace_empty_args(p, ditail_args)
 
+        self.swap_txt2img_pipeline(p, init_images=[Image.fromarray(ditail_args.src_img)])
+        # create an PIL image of random gaussian noise as init_images input
+        # random_noise_img = Image.fromarray((torch.randn(3, 256, 256) * 255).byte().cpu().numpy().transpose(1, 2, 0))
+        # self.swap_txt2img_pipeline(p, init_images=[random_noise_img])
+        # script_callbacks.on_cfg_denoiser(self.sampling_check_callback)
+
+
         if self.is_ditail_enabled(ditail_args):
             print('!! ditail enabled')
             # overwrite empty args
-            
-            self.load_inv_model(ditail_args.src_model_name)
-            model = shared.sd_model
 
+            # self.load_inv_model(ditail_args.src_model_name)
+
+            self.timesteps_sched, self.sigmas_sched = self.get_scheduler_timesteps(p, ditail_args.inv_sampler_name, ditail_args.inv_scheduler_name)
+            self.timesteps_sched_sampling = reversed(self.timesteps_sched)
             latent_save_path = create_path("./extensions/sd-webui-ditail/features")
-            self.extract_feature_maps(ditail_args, model, latent_save_path)
+            self.extract_latents(p, ditail_args, shared.sd_model, latent_save_path)
 
-            # injected_features = self.load_target_features(ditail_args, latent_save_path)
-            # print('!!loaded injectd features', injected_features)
-            # print('!! loaded injected features', len(injected_features))
-            # p.sd_model.forward = partial(p.sd_model.forward, injected_features=injected_features)
-            # UNetModelWithInjection.forward = partial(copy.deepcopy(UNetModelWithInjection.forward), injected_features=injected_features)
-            
+            conv_threshold = int(0.8 * len(self.timesteps_sched_sampling))
+            attn_threshold = int(0.5 * len(self.timesteps_sched_sampling))
+        
+            register_conv_inj(shared.sd_model.model.diffusion_model, injection_schedule=self.timesteps_sched_sampling[:conv_threshold])
+            register_attn_inj(shared.sd_model.model.diffusion_model, injection_schedule=self.timesteps_sched_sampling[:attn_threshold])
+        
+            script_callbacks.on_cfg_denoiser(self.sampling_loop_start_callback)
 
-            # simple_tensor = torch.randn(10, 10)
-            # torch.save(simple_tensor, os.path.join(latent_save_path, 'simple_tensor.pt'))
-            # with safe.Extra(self.extra_handler):
-            # # x = torch.load('model.pt')
-            #     loaded_tensor = torch.load(os.path.join(latent_save_path, 'simple_tensor.pt'))
-            #     print('!! loaded tensor', loaded_tensor)
+    def swap_txt2img_pipeline(self, p: StableDiffusionProcessingTxt2Img, init_images: list):
+        p.__class__ = StableDiffusionProcessingImg2Img
+        dummy = StableDiffusionProcessingImg2Img()
+        for k, v in dummy.__dict__.items():
+            if hasattr(p, k):
+                continue
+            setattr(p, k, v)
+        p.init_images = init_images
+        p.initial_noise_multiplier = 1.0
+        p.image_cfg_scale = p.cfg_scale
+        p.denoising_strength = 1.0
 
     def load_inv_model(self, checkpoint_name):
 
@@ -209,59 +273,45 @@ class DitailScript(scripts.Script):
 
         # return [text_to_be_sent, send_text_button]
     
-    def extract_feature_maps(self, ditail_args: DitailArgs, model, latent_save_path, seed=42):
+    def extract_latents(self, p, ditail_args: DitailArgs, model, latent_save_path, seed=42):
         extracter = ExtractLatent(latent_save_path)
-        latents, z_enc = extracter.extract(
+
+        assert self.timesteps_sched is not None, "Timesteps scheduler is not set"
+
+        self.latents, self.z_enc = extracter.extract(
                 init_image=ditail_args.src_img,
                 model=model,
                 positive_prompt=ditail_args.inv_prompt,
                 negative_prompt=ditail_args.inv_negative_prompt,
+                timesteps_sched=self.timesteps_sched,
+                sigmas_sched=self.sigmas_sched,
                 alpha=ditail_args.ditail_alpha,
                 beta=ditail_args.ditail_beta,
-                seed=42,
+                seed=seed,
                 ddim_inversion_steps=ditail_args.inv_steps,
             )
-        
-        # with open(os.path.join(latent_save_path, 'latents_tmp.pkl'), 'wb') as f:
-        #     pickle.dump(latents, f)
-        # save z_enc
-        torch.save(z_enc, os.path.join(latent_save_path, 'z_enc.pt'))
-        torch.save(latents, os.path.join(latent_save_path, 'latents.pt'))
 
-    def load_target_features(self, ditail_args: DitailArgs, latent_save_path):
-        self_attn_output_block_indices = [4,5,6,7,8,9,10,11]
-        out_layers_output_block_indices = [4]
-        output_block_self_attn_map_injection_thresholds = [ditail_args.inv_steps // 2] * len(self_attn_output_block_indices)
-        feature_injection_thresholds = [int(ditail_args.inv_steps * 1.0)] # TODO: should be one of the arguments, change later
-        target_features = []
+    def sampling_check_callback(self, params):
+        # plot the latent during generation
+        import matplotlib.pyplot as plt
+        latent_check = params.x[0].permute(1, 2, 0).cpu().numpy()
 
-        T = 999
-        c = T // ditail_args.inv_steps
+        plt.figure()
+        plt.imshow(latent_check)
+        plt.savefig(f'./extensions/sd-webui-ditail/features/samples/gen_{params.sampling_step}.png')
 
-        iterator = tqdm(reversed(range(0, T, c)), desc="DDIM inversion", total = ditail_args.inv_steps)
-        
-        for i, t in enumerate(iterator):
-            current_features = {}
-            for (output_block_idx, output_block_self_attn_map_injection_threshold) in zip(self_attn_output_block_indices, output_block_self_attn_map_injection_thresholds):
-                if i <= int(output_block_self_attn_map_injection_threshold):
-                    output_q = torch.load(os.path.join(latent_save_path, f"output_block_{output_block_idx}_self_attn_q_time_{t}.pt"))
-                    output_k = torch.load(os.path.join(latent_save_path, f"output_block_{output_block_idx}_self_attn_k_time_{t}.pt"))
-                    current_features[f"output_block_{output_block_idx}_self_attn_q"] = output_q
-                    current_features[f"output_block_{output_block_idx}_self_attn_k"] = output_k
-                
-            for (output_block_idx, feature_injection_threshold) in zip(out_layers_output_block_indices, feature_injection_thresholds):
-                if i <= int(feature_injection_threshold):
-                    output = torch.load(os.path.join(latent_save_path, f"output_block_{output_block_idx}_out_layers_features_time_{t}.pt"))
-                    current_features[f"output_block_{output_block_idx}_out_layers"] = output
-
-            target_features.append(current_features)
-        return target_features
     
-    def extra_handler(module, name):
-        print(f'!!extra handler for {name} in {module} is called')
-        if module == 'torch' and name == 'Tensor':
-            return torch.Tensor
-        return None
+    def sampling_loop_start_callback(self, params):
+        print('x size', params.x.shape)
+        print('sampling step', params.sampling_step)
+        print('sampling steps', params.total_sampling_steps)
+
+        # replace the image condition chunk with the extracted latent for injection
+        params.x[1] = self.latents[params.sigma[0].item()]
+        params.image_cond = torch.zeros_like(params.image_cond)
+        register_time(shared.sd_model.model.diffusion_model, params.sigma[0].item())
+        print('registered time', params.sigma[0].item())
+        return params
 
 
 
@@ -291,6 +341,7 @@ class DitailScript(scripts.Script):
     def after_component(self, component, **kwargs):
         if kwargs.get("elem_id") == "img2img_image":
             self.img2img_image = component
+        
         # if kwargs.get("elem_id") == "txt2img_prompt":
         #     self.txt2img_prompt = component
         # if kwargs.get("elem_id") == "img2img_prompt":
@@ -299,3 +350,8 @@ class DitailScript(scripts.Script):
         #     self.txt2img_neg_prompt = component
         # if kwargs.get("elem_id") == "img2img_neg_prompt":
         #     self.img2img_neg_prompt = component
+
+    def post_sample(self, p, ps: scripts.PostSampleArgs, *args):
+        # clear up callbacks
+        script_callbacks.remove_current_script_callbacks()
+

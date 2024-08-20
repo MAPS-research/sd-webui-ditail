@@ -66,7 +66,7 @@ def ditailui(
     with gr.Accordion(DITAIL, open=False, elem_id=eid("main_accordion")):
         cont_image = gr.Image(
                             label="content image",
-                            value='./extensions/sd-webui-ditail/test_imgs/bus_512.png',
+                            value='./extensions/sd-webui-ditail/test_imgs/Lenna.png',
                             source="upload",
                             # brush_radius=20,
                             mirror_webcam=False,
