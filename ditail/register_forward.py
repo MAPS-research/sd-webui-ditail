@@ -106,6 +106,7 @@ def register_attn_inj(model, injection_schedule=None):
     for block in model.output_blocks:
         if len(block) > 1 and "SpatialTransformer" in str(type(block[1])):
             module = block[1].transformer_blocks[0].attn1
+            module._uninjected_forward = module.forward
             module.forward = sa_forward(module)
             setattr(module, 'injection_schedule', injection_schedule)
         #     print('!!!! block injected')
@@ -118,6 +119,14 @@ def register_attn_inj(model, injection_schedule=None):
     #         module = model.output_blocks[res][0][block].attn1
     #         module.forward = sa_forward(module)
     #         setattr(module, 'injection_schedule', injection_schedule)
+
+def unregister_attn_inj(model):
+    for block in model.output_blocks:
+        if len(block) > 1 and "SpatialTransformer" in str(type(block[1])):
+            module = block[1].transformer_blocks[0].attn1
+            module.forward = module._uninjected_forward
+            delattr(module, 'injection_schedule')
+            delattr(module, '_uninjected_forward')
 
 
 def register_conv_inj(model, injection_schedule):
@@ -160,5 +169,13 @@ def register_conv_inj(model, injection_schedule):
     # conv_module._forward = conv_forward(conv_module)
 
     conv_modules = model.output_blocks[4][0]
+    conv_modules._uninjected_forward = conv_modules._forward
     conv_modules._forward = conv_forward(conv_modules)
     setattr(conv_modules, 'injection_schedule', injection_schedule)
+
+def unregister_conv_inj(model):
+
+    conv_modules = model.output_blocks[4][0]
+    conv_modules._forward = conv_modules._uninjected_forward
+    delattr(conv_modules, 'injection_schedule')
+    delattr(conv_modules, '_uninjected_forward')

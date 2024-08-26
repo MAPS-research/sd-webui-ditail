@@ -7,6 +7,7 @@ from functools import partial
 from textwrap import dedent
 from typing import TYPE_CHECKING, Any, NamedTuple
 
+import numpy as np
 import gradio as gr
 import pickle
 import torch
@@ -15,7 +16,7 @@ from PIL import Image
 
 import modules
 import ldm.modules.diffusionmodules.openaimodel
-from modules import scripts, script_callbacks, shared, sd_models, sd_samplers, sd_unet, safe
+from modules import scripts, script_callbacks, shared, sd_models, sd_vae, sd_samplers, sd_unet, safe
 from modules.ui_components import FormRow
 from modules.ui_common import create_refresh_button
 from modules.sd_samplers import all_samplers, get_sampler_and_scheduler, all_samplers_map
@@ -32,7 +33,7 @@ from ditail import (
 from ditail.args import ALL_ARGS, DitailArgs
 from ditail.ui import WebuiInfo, ditailui
 from ditail.extract_features import ExtractLatent
-from ditail.register_forward import register_attn_inj, register_conv_inj, register_time
+from ditail.register_forward import register_attn_inj, unregister_attn_inj, register_conv_inj, unregister_conv_inj, register_time
 from ditail.utils import create_path
 
 
@@ -49,14 +50,17 @@ def send_text_to_prompt(new_text, old_text, new_neg_text, old_neg_text):
     return new_text, new_neg_text
 
 
-
-
 class DitailScript(scripts.Script):
     def __init__(self) -> None:
         super().__init__()
         self.ultralytics_device = self.get_ultralytics_device()
         self.latents = None
         self.z_enc = None
+        self.original_model_cond_stage_key = None
+        self.original_processing_pipeline = None
+        self.original_checkpoint_name = None
+        self.is_ditail_enabled = False
+        self.ditail_process_callback = self.disable_ditail_callback # set to disable by default
     
     def __repr__(self):
         return f"{self.__class__.__name__}(version={__version__})"
@@ -82,7 +86,6 @@ class DitailScript(scripts.Script):
             return iteration * batch_size + batch_index
         else:
             return iteration * batch_size + 0
-
 
     def title(self):
         return DITAIL
@@ -110,21 +113,90 @@ class DitailScript(scripts.Script):
         # components = self.replace_components(components, is_img2img)
         self.infotext_fields = infotext_fields 
         print("!! check components", components)
+        
+        enable_ditail_checkbox = components[1]
+        enable_ditail_checkbox.select(fn=self.switch_ditail_onoff, inputs=[enable_ditail_checkbox], outputs=[self.sampler_component, self.scheduler_component])
+
         return components
 
-    
-    def is_ditail_enabled(self, ditail_args: DitailArgs) -> bool: 
-        if ditail_args.src_img is None:
-            message = """
-            !! Ditail: No source image detected.
-               Ditail disabled.
-            """
-            print(dedent(message), file=sys.stderr)
-            return False
 
-        return ditail_args.enable_ditail
-    
+    def switch_ditail_onoff(self, checkbox_value):
+        if checkbox_value:
+            self.is_ditail_enabled = True
+            self.ditail_process_callback = self.enable_ditail_callback
+            return (
+                gr.Dropdown.update(interactive=False, value="DDIM"),
+                gr.Dropdown.update(interactive=False, value="Automatic"),
+            )
 
+        else:
+            self.is_ditail_enabled = False
+            self.ditail_process_callback = self.disable_ditail_callback
+            return (
+                gr.Dropdown.update(interactive=True),
+                gr.Dropdown.update(interactive=True)
+            )
+
+    def enable_ditail_callback(self, p, ditail_args: DitailArgs):
+        pass
+        print('!! running with ditail enabled')
+
+        # preprocess ditail_args.src_img
+        # TODO: make resize mode configurable in UI
+        ditail_args.src_img = modules.images.resize_image(resize_mode="0", im=ditail_args.src_img, width=p.width, height=p.height, upscaler_name=None)
+        # other src_img preprocessing are done in extrac_features.py
+        print('!! check src img', ditail_args.src_img.size)
+
+        # replace pipeline to img2img
+        self.original_model_cond_stage_key = shared.sd_model.cond_stage_key
+        # shared.sd_model.cond_stage_key = "edit"
+        self.swap_xxx2img_pipeline(p, init_images=[ditail_args.src_img])
+
+        self.load_model(ditail_args.src_model_name, for_inv=True)
+        print('!!!! check original checkpoint name', self.original_checkpoint_name)
+
+        self.timesteps_sched, self.sigmas_sched = self.get_scheduler_timesteps(p) # timesteps_sched example: [1.0, 51.0, 101.0, 151.0 ... ]
+
+        latent_save_path = create_path("./extensions/sd-webui-ditail/features")
+        self.latents, self.z_enc = self.extract_latents(p, ditail_args, shared.sd_model, self.timesteps_sched, self.sigmas_sched, latent_save_path )
+
+        self.load_model(self.original_checkpoint_name, for_inv=False)
+        shared.sd_model.cond_stage_key = "edit"
+        print('!!!! check the current process pipeline class', p.__class__)
+        print('!!!! check the current cond_stage_key', shared.sd_model.cond_stage_key)
+
+        conv_threshold = int(ditail_args.conv_ratio * len(self.timesteps_sched))
+        attn_threshold = int(ditail_args.attn_ratio * len(self.timesteps_sched))
+
+        register_conv_inj(shared.sd_model.model.diffusion_model, injection_schedule=reversed(self.timesteps_sched)[:conv_threshold])
+        register_attn_inj(shared.sd_model.model.diffusion_model, injection_schedule=reversed(self.timesteps_sched)[:attn_threshold])
+
+        # add sampling loop callback for feature injection
+        script_callbacks.on_cfg_denoiser(self.sampling_loop_start_callback)
+
+    def disable_ditail_callback(self, p, ditail_args: DitailArgs):
+        print('!! running with ditail disabled')
+
+        # reset the model condition stage key
+        if self.original_model_cond_stage_key:
+            shared.sd_model.cond_stage_key = self.original_model_cond_stage_key
+
+        # reset the processing pipeline
+        if self.original_processing_pipeline:
+            self.swap_xxx2orig_pipeline(p)
+
+        self.timesteps_sched, self.sigmas_sched = None, None
+
+        self.latents, self.z_enc = None, None
+
+        # make injection not happen
+        unregister_conv_inj(shared.sd_model.model.diffusion_model)
+        unregister_attn_inj(shared.sd_model.model.diffusion_model)
+        
+        # remove sampling loop callback
+        script_callbacks.remove_current_script_callbacks()
+
+    
     def replace_empty_args(self, p, ditail_args: DitailArgs) -> DitailArgs:
         i = self.get_i(p)
         # TODO: check whether prompt should be str or list
@@ -139,9 +211,8 @@ class DitailScript(scripts.Script):
         return ditail_args
     
     
-    def get_scheduler_timesteps(self, p, sampler_name, scheduler_name):
-        sampler_name, scheduler_name = get_sampler_and_scheduler(sampler_name, scheduler_name)
-
+    def get_scheduler_timesteps(self, p):
+        sampler_name, scheduler_name = get_sampler_and_scheduler(p.sampler_name, p.scheduler)
         # print('!! sampler name', p.sampler, self.sampler_name, sampler_name, scheduler_name)
 
         sampler = all_samplers_map.get(sampler_name)
@@ -156,82 +227,34 @@ class DitailScript(scripts.Script):
             timesteps_sched = [sampler_class.model_wrap.sigma_to_t(s) for s in sigmas_sched]
 
         return timesteps_sched, sigmas_sched
-        # print('!! sampler', sampler)
-
-        # print('!! sampler and scheduler name', sampler_name, scheduler_name)
-        # if scheduler_name == 'Automatic':
-        #     scheduler = schedulers_map.get('uniform')
-        #     sampler_row = [row for row in samplers_k_diffusion if row[0] == sampler_name]
-        #     if len(sampler_row) > 0:
-        #         options = sampler_row[0][3]
-        #         if options.get('scheduler', False):
-        #             scheduler = schedulers_map.get(options['scheduler'])
-        # scheduler = scheduler
-
-        # print('!! device check', sigmas.device)
-
-        # print('!! scheduler', scheduler, type(scheduler))
-        # sigmas_sched = scheduler.function(p.steps, sigma_min=min(sigmas), sigma_max=max(sigmas), device=shared.device)
-        # timestep_sched = [sampler_class.model_wrap.sigma_to_t(s) for s in sigmas_sched]
-        # print('!! timestep_sched', timestep_sched)
-        # # print('!! timesteps', scheduler.function(p.steps, sigma_min=min(sigmas), sigma_max=max(sigmas), device=shared.device))
-
-        # return scheduler.function(p.steps, sigma_min=min(sigmas), sigma_max=max(sigmas), device=shared.device)
 
 
     def process(self, p, *args):
-        # model_structure = str(shared.sd_model)
-        # with open('./extensions/sd-webui-ditail/scripts/model_structure.txt', 'w') as f:
-        #     f.write(model_structure)
 
-        # print('!! p', type(p))'
-        # print(!!'opts', opts.scheduler, type(opts))
-
-        # force change sampler to DDIM
-        p.sampler_name = "DDIM"
-
-        print('!! get i', self.get_i(p))
-        shared.sd_model.cond_stage_key = "edit"
-
-        sampler_config = sd_samplers.find_sampler_config(p.sampler_name)
-        total_steps = sampler_config.total_steps(p.steps)
-        print('!! total sampler steps', total_steps)
+        # print('!! get i', self.get_i(p))
+        # shared.sd_model.cond_stage_key = "edit"
 
         # map args to ditail_args
         ditail_args = DitailArgs()
-        ditail_args.src_img, ditail_args.enable_ditail = args[0], args[1]
+        # ditail_args.src_img, ditail_args.enable_ditail = args[0], args[1]
+        ditail_args.src_img = args[0]
         for k, v in args[2].items():
             setattr(ditail_args, k, v)
         
         ditail_args = self.replace_empty_args(p, ditail_args)
 
-        self.swap_txt2img_pipeline(p, init_images=[Image.fromarray(ditail_args.src_img)])
-        # create an PIL image of random gaussian noise as init_images input
-        # random_noise_img = Image.fromarray((torch.randn(3, 256, 256) * 255).byte().cpu().numpy().transpose(1, 2, 0))
-        # self.swap_txt2img_pipeline(p, init_images=[random_noise_img])
-        # script_callbacks.on_cfg_denoiser(self.sampling_check_callback)
-
-
-        if self.is_ditail_enabled(ditail_args):
-            print('!! ditail enabled')
-            # overwrite empty args
-
-            # self.load_inv_model(ditail_args.src_model_name)
-
-            self.timesteps_sched, self.sigmas_sched = self.get_scheduler_timesteps(p, ditail_args.inv_sampler_name, ditail_args.inv_scheduler_name)
-            self.timesteps_sched_sampling = reversed(self.timesteps_sched)
-            latent_save_path = create_path("./extensions/sd-webui-ditail/features")
-            self.extract_latents(p, ditail_args, shared.sd_model, latent_save_path)
-
-            conv_threshold = int(0.8 * len(self.timesteps_sched_sampling))
-            attn_threshold = int(0.5 * len(self.timesteps_sched_sampling))
+        if ditail_args.src_img is None:
+            self.is_ditail_enabled = False
+            self.ditail_process_callback = self.disable_ditail_callback
+            print('!! ditail is not working because no source image is provided')
         
-            register_conv_inj(shared.sd_model.model.diffusion_model, injection_schedule=self.timesteps_sched_sampling[:conv_threshold])
-            register_attn_inj(shared.sd_model.model.diffusion_model, injection_schedule=self.timesteps_sched_sampling[:attn_threshold])
-        
-            script_callbacks.on_cfg_denoiser(self.sampling_loop_start_callback)
+        if self.ditail_process_callback is not None:
+            self.ditail_process_callback(p, ditail_args)
 
-    def swap_txt2img_pipeline(self, p: StableDiffusionProcessingTxt2Img, init_images: list):
+        print('!! check p class', p.__class__)
+
+    def swap_xxx2img_pipeline(self, p, init_images: list):
+        self.original_processing_pipeline = p.__class__
         p.__class__ = StableDiffusionProcessingImg2Img
         dummy = StableDiffusionProcessingImg2Img()
         for k, v in dummy.__dict__.items():
@@ -242,54 +265,69 @@ class DitailScript(scripts.Script):
         p.initial_noise_multiplier = 1.0
         p.image_cfg_scale = p.cfg_scale
         p.denoising_strength = 1.0
-
-    def load_inv_model(self, checkpoint_name):
-
-        print('!! shared model', shared.opts.sd_model_checkpoint)
-        checkpoint_info = sd_models.get_closet_checkpoint_match(checkpoint_name)
-        print("!! loading inv model", checkpoint_info, type(checkpoint_info))
-        self.old_model = shared.sd_model
-        inv_model = sd_models.reload_model_weights(info = checkpoint_info)
-        print("!! inv model loaded", type(inv_model), inv_model.sd_model_checkpoint)
-        print("!! new shared model", shared.opts.sd_model_checkpoint)
-
-        # print("!! current sampler name", sampler_name)
-
-        # sd_models.reload_model_weights(sd_model = self.old_model)
-        # print("!! Reloaded old model", shared.opts.sd_model_checkpoint)
-        # with contextlib.suppress(AttributeError):  # Ignore the error if the attribute is not present
-        #     if is_img2img:
-        #         # Bind the click event of the button to the send_text_to_prompt function
-        #         # Inputs: text_to_be_sent (textbox), self.boxxIMG (textbox)
-        #         # Outputs: self.boxxIMG (textbox)
-        #         # send_text_button.click(fn=send_text_to_prompt, inputs=[text_to_be_sent, self.boxxIMG], outputs=[self.boxxIMG])
-        #         pass
-        #     else:
-        #         # Bind the click event of the button to the send_text_to_prompt function
-        #         # Inputs: text_to_be_sent (textbox), self.boxx (textbox)
-        #         # Outputs: self.boxx (textbox)
-        #         pass
-        #         # send_text_button.click(fn=send_text_to_prompt, inputs=[text_to_be_sent, self.boxx, negative_text_to_be_sent, self.neg_prompt_boxTXT], outputs=[self.boxx, self.neg_prompt_boxTXT])
-
-        # return [text_to_be_sent, send_text_button]
     
-    def extract_latents(self, p, ditail_args: DitailArgs, model, latent_save_path, seed=42):
+    def swap_xxx2orig_pipeline(self, p):
+        dummy = self.original_processing_pipeline()
+        for k, v in p.__dict__.items():
+            if hasattr(dummy, k):
+                setattr(dummy, k, v)
+        p = dummy
+
+    def recursively_try(self, func, max_tries=2, *args, **kwargs):
+        for i in range(max_tries):
+            try:
+                return func(*args, **kwargs)
+            except Exception as e:
+                if i == max_tries - 1:
+                    print(f"!! error occured in try {i+1}/{max_tries}, failed to execute {func.__name__}")
+                else:
+                    print(f"!! error occured in try {i+1}/{max_tries}, retrying...")
+                continue
+        return None
+
+    # def load_inv_model(self, checkpoint_name):
+
+    #     print('!! shared model', shared.opts.sd_model_checkpoint)
+    #     checkpoint_info = sd_models.get_closet_checkpoint_match(checkpoint_name)
+    #     print("!! loading inv model", checkpoint_info, type(checkpoint_info))
+    #     self.old_model = shared.sd_model
+    #     inv_model = sd_models.reload_model_weights(info = checkpoint_info)
+    #     print("!! inv model loaded", type(inv_model), inv_model.sd_model_checkpoint)
+    #     print("!! new shared model", shared.opts.sd_model_checkpoint)
+
+    def load_model(self, checkpoint_name, for_inv=True):
+        print('!!!! original checkpoint name', self.original_checkpoint_name)
+        print('!!!! checkpoint name to load', checkpoint_name)
+        if shared.opts.sd_model_checkpoint != checkpoint_name:
+            if for_inv:
+                # we need to keep the original model to be able to switch back
+                self.original_checkpoint_name = shared.opts.sd_model_checkpoint
+
+            checkpoint_info = sd_models.get_closet_checkpoint_match(checkpoint_name)
+            # reloaded_model = sd_models.reload_model_weights(info = checkpoint_info)
+            self.recursively_try(sd_models.reload_model_weights, 2, info = checkpoint_info)
+
+        print('!!!! model loaded as', shared.opts.sd_model_checkpoint)
+    
+    def extract_latents(self, p, ditail_args: DitailArgs, model, timesteps_sched, sigmas_sched, latent_save_path, seed=42):
         extracter = ExtractLatent(latent_save_path)
 
-        assert self.timesteps_sched is not None, "Timesteps scheduler is not set"
+        assert timesteps_sched is not None, "Timesteps scheduler is not set"
 
-        self.latents, self.z_enc = extracter.extract(
+        latents, z_enc = extracter.extract(
                 init_image=ditail_args.src_img,
                 model=model,
                 positive_prompt=ditail_args.inv_prompt,
                 negative_prompt=ditail_args.inv_negative_prompt,
-                timesteps_sched=self.timesteps_sched,
-                sigmas_sched=self.sigmas_sched,
+                timesteps_sched=timesteps_sched,
+                sigmas_sched=sigmas_sched,
                 alpha=ditail_args.ditail_alpha,
                 beta=ditail_args.ditail_beta,
                 seed=seed,
                 ddim_inversion_steps=ditail_args.inv_steps,
             )
+    
+        return latents, z_enc
 
     def sampling_check_callback(self, params):
         # plot the latent during generation
@@ -314,34 +352,17 @@ class DitailScript(scripts.Script):
         return params
 
 
-
-    # def after_component(self, component, **kwargs):
-    #     #https://github.com/AUTOMATIC1111/stable-diffusion-webui/pull/7456#issuecomment-1414465888 helpfull link
-    #     # Find the text2img textbox component
-    #     if kwargs.get("elem_id") == "txt2img_prompt": #postive prompt textbox
-    #         self.boxx = component
-    #         print('!! boxx', self.boxx)
-    #     # Find the img2img textbox component
-    #     if kwargs.get("elem_id") == "img2img_prompt":  #postive prompt textbox
-    #         self.boxxIMG = component
-
-    #     #this code below  works aswell, you can send negative prompt text box,provided you change the code a little
-    #     #switch  self.boxx with  self.neg_prompt_boxTXT  and self.boxxIMG with self.neg_prompt_boxIMG
-
-    #     if kwargs.get("elem_id") == "txt2img_neg_prompt":
-    #         self.neg_prompt_boxTXT = component
-    #     if kwargs.get("elem_id") == "img2img_neg_prompt":
-    #         self.neg_prompt_boxIMG = component
-
-    #     if kwargs.get("elem_id") == "txt2img_sampling":
-    #         self.sampler_name = component
-    #         print('!! sampler name', self.sampler_name)
-    #         # self.sampler_name.change(fn=self.show_sampler, inputs=[self.sampler_name])
-
     def after_component(self, component, **kwargs):
         if kwargs.get("elem_id") == "img2img_image":
             self.img2img_image = component
         
+        if kwargs.get("elem_id") == "img2img_sampling" or kwargs.get("elem_id") == "txt2img_sampling":
+            self.sampler_component = component
+        
+        if kwargs.get("elem_id") == "img2img_scheduler" or kwargs.get("elem_id") == "txt2img_scheduler":
+            self.scheduler_component = component
+
+
         # if kwargs.get("elem_id") == "txt2img_prompt":
         #     self.txt2img_prompt = component
         # if kwargs.get("elem_id") == "img2img_prompt":
@@ -351,7 +372,7 @@ class DitailScript(scripts.Script):
         # if kwargs.get("elem_id") == "img2img_neg_prompt":
         #     self.img2img_neg_prompt = component
 
-    def post_sample(self, p, ps: scripts.PostSampleArgs, *args):
-        # clear up callbacks
-        script_callbacks.remove_current_script_callbacks()
+    # def post_sample(self, p, ps: scripts.PostSampleArgs, *args):
+    #     # clear up callbacks
+    #     script_callbacks.remove_current_script_callbacks()
 

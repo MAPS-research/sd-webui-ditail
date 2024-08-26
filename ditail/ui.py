@@ -66,11 +66,11 @@ def ditailui(
     with gr.Accordion(DITAIL, open=False, elem_id=eid("main_accordion")):
         cont_image = gr.Image(
                             label="content image",
-                            value='./extensions/sd-webui-ditail/test_imgs/Lenna.png',
+                            value='./extensions/sd-webui-ditail/test_imgs/Cocktail.jpg',
                             source="upload",
                             # brush_radius=20,
                             mirror_webcam=False,
-                            type="numpy",
+                            type="pil",
                             # tool="sketch",
                             elem_id=eid("cont_image"),
                             visible=not is_img2img
@@ -139,7 +139,7 @@ def ditailui(
                     visible=True
                 )
 
-        with gr.Group():
+        with gr.Row():
             w.src_model_name = gr.Dropdown(
                 choices=webui_info.checkpoints_list,
                 label=w.attr2name("src_model_name"),
