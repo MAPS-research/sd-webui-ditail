@@ -66,11 +66,11 @@ def ditailui(
     with gr.Accordion(DITAIL, open=False, elem_id=eid("main_accordion")):
         cont_image = gr.Image(
                             label="content image",
-                            value='./extensions/sd-webui-ditail/test_imgs/bus_512.png',
+                            value='./extensions/sd-webui-ditail/test_imgs/Cocktail.jpg',
                             source="upload",
                             # brush_radius=20,
                             mirror_webcam=False,
-                            type="numpy",
+                            type="pil",
                             # tool="sketch",
                             elem_id=eid("cont_image"),
                             visible=not is_img2img
@@ -99,7 +99,65 @@ def ditailui(
         
         infotext_fields.append((ditail_enable, "Ditail enabled"))
 
+        with gr.Row():
+            w.src_model_name = gr.Dropdown(
+                choices=webui_info.checkpoints_list,
+                label=w.attr2name("src_model_name"),
+                elem_id=eid("src_model_name"),
+                visible=True
+            )
+
+            w.src_vae_name = gr.Dropdown(
+                choices=webui_info.vae_list,
+                label=w.attr2name("src_vae_name"),
+                elem_id=eid("src_vae_name"),
+                visible=True
+            )
+
         with gr.Group():
+            # w.inv_prompt = gr.Textbox(
+            #     label=w.attr2name("inv_prompt"),
+            #     show_label=False,
+            #     lines=3,
+            #     placeholder=w.attr2name("inv_prompt") + "\nMain prompt will be used if left empty",
+            #     elem_id=eid("inv_prompt"),
+            # )
+
+            # w.inv_negative_prompt = gr.Textbox(
+            #     label=w.attr2name("inv_negative_prompt"),
+            #     show_label=False,
+            #     lines=2,
+            #     placeholder=w.attr2name("inv_negative_prompt") + "\nMain negative prompt will be used if left empty",
+            #     elem_id=eid("inv_negative_prompt"),
+            # )
+
+            with gr.Row():
+                w.ditail_alpha = gr.Slider(
+                    minimum=0.0,
+                    maximum=10.0,
+                    value=3.0,
+                    step=0.1,
+                    # label="positive prompt scaling (alpha)",
+                    label=w.attr2name("ditail_alpha"),
+                    elem_id=eid("ditail_alpha"),
+                    interactive=True,
+                    visible=True
+                )
+            
+                w.ditail_beta = gr.Slider(
+                    minimum=0.0,
+                    maximum=10.0,
+                    value=0.5,
+                    step=0.1,
+                    # label="negative prompt scaling (beta)",
+                    label=w.attr2name("ditail_beta"),
+                    elem_id=eid("ditail_beta"),
+                    interactive=True,
+                    visible=True
+                )
+
+
+        with gr.Accordion("Extra Options", open=False, elem_id=eid("extra_options_accordion")):
             w.inv_prompt = gr.Textbox(
                 label=w.attr2name("inv_prompt"),
                 show_label=False,
@@ -117,42 +175,27 @@ def ditailui(
             )
 
             with gr.Row():
-                w.ditail_alpha = gr.Slider(
+                w.conv_ratio = gr.Slider(
                     minimum=0.0,
-                    maximum=10.0,
-                    value=3.0,
+                    maximum=1.0,
+                    value=0.8,
                     step=0.1,
-                    label="positive prompt scaling weight (alpha)",
-                    elem_id=eid("ditail_alpha"),
+                    label=w.attr2name("conv_ratio"),
+                    elem_id=eid("conv_ratio"),
                     interactive=True,
                     visible=True
                 )
-            
-                w.ditail_beta = gr.Slider(
+
+                w.attn_ratio = gr.Slider(
                     minimum=0.0,
-                    maximum=10.0,
+                    maximum=1.0,
                     value=0.5,
                     step=0.1,
-                    label="negative prompt scaling weight (beta)",
-                    elem_id=eid("ditail_beta"),
+                    label=w.attr2name("attn_ratio"),
+                    elem_id=eid("attn_ratio"),
                     interactive=True,
                     visible=True
                 )
-
-        with gr.Group():
-            w.src_model_name = gr.Dropdown(
-                choices=webui_info.checkpoints_list,
-                label=w.attr2name("src_model_name"),
-                elem_id=eid("src_model_name"),
-                visible=True
-            )
-
-            w.src_vae_name = gr.Dropdown(
-                choices=webui_info.vae_list,
-                label=w.attr2name("src_vae_name"),
-                elem_id=eid("src_vae_name"),
-                visible=True
-            )
 
         state = gr.State(lambda: state_init(w))
 
