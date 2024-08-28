@@ -160,7 +160,7 @@ class DitailScript(scripts.Script):
         latent_save_path = create_path("./extensions/sd-webui-ditail/features")
         self.latents, self.z_enc = self.extract_latents(p, ditail_args, shared.sd_model, self.timesteps_sched, self.sigmas_sched, latent_save_path )
 
-        self.load_model(self.original_checkpoint_name, for_inv=False)
+        self.load_model(self.original_checkpoint_name, self.original_vae_name, for_inv=False)
         shared.sd_model.cond_stage_key = "edit"
         print('!!!! check the current process pipeline class', p.__class__)
         print('!!!! check the current cond_stage_key', shared.sd_model.cond_stage_key)
@@ -273,7 +273,7 @@ class DitailScript(scripts.Script):
                 setattr(dummy, k, v)
         p = dummy
 
-    def recursively_try(self, func, max_tries=2, *args, **kwargs):
+    def func_trial(self, func, max_tries=2, *args, **kwargs):
         for i in range(max_tries):
             try:
                 return func(*args, **kwargs)
@@ -295,17 +295,21 @@ class DitailScript(scripts.Script):
     #     print("!! inv model loaded", type(inv_model), inv_model.sd_model_checkpoint)
     #     print("!! new shared model", shared.opts.sd_model_checkpoint)
 
-    def load_model(self, checkpoint_name, for_inv=True):
+    def load_model(self, checkpoint_name, vae_name=None, for_inv=True):
         print('!!!! original checkpoint name', self.original_checkpoint_name)
         print('!!!! checkpoint name to load', checkpoint_name)
+        shared.opts.sd_vae_overrides_per_model_preferences = True
         if shared.opts.sd_model_checkpoint != checkpoint_name:
             if for_inv:
                 # we need to keep the original model to be able to switch back
                 self.original_checkpoint_name = shared.opts.sd_model_checkpoint
+                self.original_vae_name = shared.opts.sd_vae
 
+            if vae_name is not None and shared.opts.sd_vae != vae_name:
+                shared.opts.sd_vae = vae_name
             checkpoint_info = sd_models.get_closet_checkpoint_match(checkpoint_name)
             # reloaded_model = sd_models.reload_model_weights(info = checkpoint_info)
-            self.recursively_try(sd_models.reload_model_weights, 2, info = checkpoint_info)
+            self.func_trial(sd_models.reload_model_weights, 2, info = checkpoint_info)
 
         print('!!!! model loaded as', shared.opts.sd_model_checkpoint)
     
@@ -329,14 +333,14 @@ class DitailScript(scripts.Script):
     
         return latents, z_enc
 
-    def sampling_check_callback(self, params):
-        # plot the latent during generation
-        import matplotlib.pyplot as plt
-        latent_check = params.x[0].permute(1, 2, 0).cpu().numpy()
+    # def sampling_check_callback(self, params):
+    #     # plot the latent during generation
+    #     import matplotlib.pyplot as plt
+    #     latent_check = params.x[0].permute(1, 2, 0).cpu().numpy()
 
-        plt.figure()
-        plt.imshow(latent_check)
-        plt.savefig(f'./extensions/sd-webui-ditail/features/samples/gen_{params.sampling_step}.png')
+    #     plt.figure()
+    #     plt.imshow(latent_check)
+    #     plt.savefig(f'./extensions/sd-webui-ditail/features/samples/gen_{params.sampling_step}.png')
 
     
     def sampling_loop_start_callback(self, params):
