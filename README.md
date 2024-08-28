@@ -1,10 +1,18 @@
 # sd-webui-ditail
-The official implementation of the 'Diffusion Cocktail' extension for Automatic 1111 Webui.
+The official implementation of the 'Diffusion Cocktail' (Ditail) extension for Automatic 1111 Webui.
 
 Ditail offers a training-free method for novel image generations and fine-grained manipulations of content/style, enabling flexible integrations of existing pre-trained Diffusion models and LoRAs.
 
+Two usecases of Ditail are as follows:
+
+**(a) Stylizing Real/Generated Images (SD Checkpoint + Optional LoRA)**
 <p align="center">
-  <img src="./assets/Intro-vertical.png" alt="Ditail Intro Figure">
+  <img src="./assets/Intro-a.png" alt="Ditail Intro Figure">
+</p>
+
+**(b) Prompt-based Image Manipulation**
+<p align="center">
+  <img src="./assets/Intro-b.png" alt="Ditail Intro Figure">
 </p>
 
 ## Quick Links
@@ -63,3 +71,17 @@ In this example, inversion prompt and generation prompt are both set as 'a glass
 - [ ] SDXL support
 - [ ] Support for batch count and batch size larger than 1
 - [ ] We are also working on developing extension for comfyui. Stay tuned!
+
+## Acknowledgement
+This work is supported in part by the Shanghai Frontiers Science Center of Artificial Intelligence and Deep Learning at NYU Shanghai, NYU Shanghai Boost Fund, and NYU HPC resources and services.
+
+## Citation
+If you find our work helpful, please consider cite it as follows:
+```bibtex
+@article{liu2023ditail,
+  title={Diffusion Cocktail: Fused Generation from Diffusion Models},
+  author={Liu, Haoming and Guo, Yuanhe and Wang, Shengjie and Wen, Hongyi},
+  journal={arXiv preprint arXiv:2312.08873},
+  year={2023}
+}
+```
