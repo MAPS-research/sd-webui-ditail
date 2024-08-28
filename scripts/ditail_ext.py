@@ -34,21 +34,12 @@ from ditail.args import ALL_ARGS, DitailArgs
 from ditail.ui import WebuiInfo, ditailui
 from ditail.extract_features import ExtractLatent
 from ditail.register_forward import register_attn_inj, unregister_attn_inj, register_conv_inj, unregister_conv_inj, register_time
-from ditail.utils import create_path
-
 
 txt2img_submit_button = img2img_submit_button = None
 
 print(
     f"[-] Ditail script loaded. version: {__version__}, device: {shared.device}"
 )
-
-def send_text_to_prompt(new_text, old_text, new_neg_text, old_neg_text):
-    # if old_text == "":  # if text on the textbox text2img or img2img is empty, return new text
-    #     return new_text
-    # return old_text + " " + new_text  # else join them together and send it to the textbox
-    return new_text, new_neg_text
-
 
 class DitailScript(scripts.Script):
     def __init__(self) -> None:
@@ -157,8 +148,7 @@ class DitailScript(scripts.Script):
 
         self.timesteps_sched, self.sigmas_sched = self.get_scheduler_timesteps(p) # timesteps_sched example: [1.0, 51.0, 101.0, 151.0 ... ]
 
-        latent_save_path = create_path("./extensions/sd-webui-ditail/features")
-        self.latents, self.z_enc = self.extract_latents(p, ditail_args, shared.sd_model, self.timesteps_sched, self.sigmas_sched, latent_save_path )
+        self.latents, self.z_enc = self.extract_latents(p, ditail_args, shared.sd_model, self.timesteps_sched, self.sigmas_sched)
 
         self.load_model(self.original_checkpoint_name, self.original_vae_name, for_inv=False)
         shared.sd_model.cond_stage_key = "edit"
@@ -229,7 +219,7 @@ class DitailScript(scripts.Script):
         return timesteps_sched, sigmas_sched
 
     def process(self, p, *args):
-        print('!!!! check args', args)
+        # print('!!!! check args', args)
         # map args to ditail_args
         ditail_args = DitailArgs()
         ditail_args.src_img = args[0]
@@ -297,8 +287,8 @@ class DitailScript(scripts.Script):
 
         # print('!!!! model loaded as', shared.opts.sd_model_checkpoint)
     
-    def extract_latents(self, p, ditail_args: DitailArgs, model, timesteps_sched, sigmas_sched, latent_save_path, seed=42):
-        extracter = ExtractLatent(latent_save_path)
+    def extract_latents(self, p, ditail_args: DitailArgs, model, timesteps_sched, sigmas_sched, seed=42):
+        extracter = ExtractLatent()
 
         assert timesteps_sched is not None, "Timesteps scheduler is not set"
 
@@ -318,15 +308,12 @@ class DitailScript(scripts.Script):
         return latents, z_enc
     
     def sampling_loop_start_callback(self, params):
-        print('x size', params.x.shape)
-        # print('sampling step', params.sampling_step)
-        # print('sampling steps', params.total_sampling_steps)
+        # print('x size', params.x.shape)
 
         # replace the image condition chunk with the extracted latent for injection
         params.x[1] = self.latents[params.sigma[0].item()]
         params.image_cond = torch.zeros_like(params.image_cond)
         register_time(shared.sd_model.model.diffusion_model, params.sigma[0].item())
-        # print('registered time', params.sigma[0].item())
         return params
 
 

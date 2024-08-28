@@ -3,7 +3,7 @@ The official implementation of the 'Diffusion Cocktail' (Ditail) extension for A
 
 Ditail offers a training-free method for novel image generations and fine-grained manipulations of content/style, enabling flexible integrations of existing pre-trained Diffusion models and LoRAs.
 
-Two usecases of Ditail are as follows:
+Two use cases of Ditail are as follows:
 
 **(a) Stylizing Real/Generated Images (SD Checkpoint + Optional LoRA)**
 <p align="center">
@@ -47,16 +47,16 @@ In this example, inversion prompt and generation prompt are both set as 'a glass
 | Content Image | The image to be manipulated. Ditail will keep the content and structure of this image while changing the style. | An image of cocktail we took |
 | Source Checkpoint | The checkpoint for DDIM inversion. The checkpoint that matches the content image's style is recommended.| `None` = the same checkpoint as that in main ui |
 | Source VAE | The VAE checkpoint for DDIM inversion. The checkpoint that matches the source checkpoint is recommended. | `None` = 'Automatic' |
-| Positive Prompt Scaling (Alpha) | The scaling factor for the positive prompt. The larger the value, more content and structure of the content image will be preserved. Value between 3-7 is a good starting point | 5.0 |
-| Negative Prompt Scaling (Beta) | The scaling factor for the negative prompt. The larger the value, more content and structure of the content image will be preserved. However, beta being too large might lead to weird colors | 0.5 |
+| Positive Prompt Scaling (Alpha) | The scaling factor for the positive prompt. The larger the value, more content and structure of the content image will be preserved. Value between 3-7 is a good starting point. | 5.0 |
+| Negative Prompt Scaling (Beta) | The scaling factor for the negative prompt. The larger the value, more content and structure of the content image will be preserved. However, beta being too large might lead to weird colors. | 0.5 |
 
 **Extra Options:**
 | Name | Description | Default Value |
 |:----|:-----------|:-------------:|
-| Positive Inversion Prompt | The positive prompt for DDIM inversion| `None` = Prompt for generation from main UI |
-| Negative Inversion Prompt | The negative prompt for DDIM inversion| `None` = Negative prompt for generation from main UI |
-| Convolutional Ratio | Controls the ratio of steps where we inject the features from the content image to convolutional layers | 0.8 |
-| Attention Ratio | Controls the ratio of steps where we inject the features from the content image to attention layers | 0.5 |
+| Positive Inversion Prompt | The positive prompt for DDIM inversion.| `None` = Prompt for generation from main UI |
+| Negative Inversion Prompt | The negative prompt for DDIM inversion.| `None` = Negative prompt for generation from main UI |
+| Convolutional Ratio | Controls the ratio of steps where we inject the features from the content image to convolutional layers. | 0.8 |
+| Attention Ratio | Controls the ratio of steps where we inject the features from the content image to attention layers. | 0.5 |
 
 **Notes:**
 - Ditail plugin works in both txt2img and img2img modes. However, we haven't tested inpainting yet.

@@ -13,12 +13,10 @@ def exists(val):
 def uniq(arr):
     return{el: True for el in arr}.keys()
 
-
 def default(val, d):
     if exists(val):
         return val
     return d() if isfunction(d) else d
-
 
 def max_neg_value(t):
     return -th.finfo(t.dtype).max
