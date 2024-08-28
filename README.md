@@ -4,7 +4,7 @@ The official implementation of the 'Diffusion Cocktail' extension for Automatic 
 Ditail offers a training-free method for novel image generations and fine-grained manipulations of content/style, enabling flexible integrations of existing pre-trained Diffusion models and LoRAs.
 
 <p align="center">
-  <img src="./assets/Intro.png" alt="Ditail Intro Figure">
+  <img src="./assets/Intro-vertical.png" alt="Ditail Intro Figure">
 </p>
 
 ## Quick Links
@@ -26,6 +26,13 @@ Ditail offers a training-free method for novel image generations and fine-graine
 7. Completely restart A1111 webui including your terminal. (If you do not know what is a "terminal", you can reboot your computer: turn your computer off and turn it on again.)
 
 ## Hyperparameters Explanation
+**Illustration for Ditail Pipeline**
+<p align="center">
+  <img src="./assets/Pipeline.png" alt="Ditail Pipeline Illustration">
+</p>
+
+In this example, inversion prompt and generation prompt are both set as 'a glass of orange juice'. Optionally, you can use different prompts for inversion and generation. Check 'Positive Inversion Prompt' and 'Negative Inversion Prompt' below for more details.
+
 **Basic Options:**
 | Name | Description | Default Value |
 |:----|:-----------|:-------------:|
@@ -38,8 +45,8 @@ Ditail offers a training-free method for novel image generations and fine-graine
 **Extra Options:**
 | Name | Description | Default Value |
 |:----|:-----------|:-------------:|
-| Positive Inversion Prompt | The positive prompt for DDIM inversion, could be useful in content manipulation| `None` = Main prompt for generation |
-| Negative Inversion Prompt | The negative prompt for DDIM inversion, could be useful in content manipulation | `None` = Main negative prompt for generation |
+| Positive Inversion Prompt | The positive prompt for DDIM inversion| `None` = Prompt for generation from main UI |
+| Negative Inversion Prompt | The negative prompt for DDIM inversion| `None` = Negative prompt for generation from main UI |
 | Convolutional Ratio | Controls the ratio of steps where we inject the features from the content image to convolutional layers | 0.8 |
 | Attention Ratio | Controls the ratio of steps where we inject the features from the content image to attention layers | 0.5 |
 
