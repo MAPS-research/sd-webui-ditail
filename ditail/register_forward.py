@@ -13,12 +13,10 @@ def exists(val):
 def uniq(arr):
     return{el: True for el in arr}.keys()
 
-
 def default(val, d):
     if exists(val):
         return val
     return d() if isfunction(d) else d
-
 
 def max_neg_value(t):
     return -th.finfo(t.dtype).max
@@ -54,7 +52,7 @@ def register_attn_inj(model, injection_schedule=None):
             to_out = to_out[0]
         
         def forward(x, context=None, mask=None):
-            print('!!!! sa_forward called')
+            # print('!!!! sa_forward called')
             # batch_size, seqence_length, dim = x.shape
             h = self.heads
 
@@ -74,10 +72,10 @@ def register_attn_inj(model, injection_schedule=None):
                 # inject neg chunk
                 q[2*bs:] = q[bs:2*bs]
                 k[2*bs:] = k[bs:2*bs]
-                print('**** attn injection done')
+                # print('**** attn injection done')
 
-            else:
-                print('!!!! context shape', context.shape)
+            # else:
+            #     print('!!!! context shape', context.shape)
 
             q, k, v = map(lambda t: rearrange(t, 'b n (h d) -> (b h) n d', h=h), (q, k, v))
 
@@ -109,30 +107,22 @@ def register_attn_inj(model, injection_schedule=None):
             module._uninjected_forward = module.forward
             module.forward = sa_forward(module)
             setattr(module, 'injection_schedule', injection_schedule)
-        #     print('!!!! block injected')
-        # else:
-        #     print('!!!! block not injected')
-    # res_dict = {1: [1, 2], 2: [0, 1, 2], 3: [0, 1, 2]}
-    # for res in res_dict:
-    #     for block in res_dict[res]:
-    #         # module = model.UNetModel.output_blocks[res].ResBlock[block].attn1
-    #         module = model.output_blocks[res][0][block].attn1
-    #         module.forward = sa_forward(module)
-    #         setattr(module, 'injection_schedule', injection_schedule)
+
 
 def unregister_attn_inj(model):
     for block in model.output_blocks:
         if len(block) > 1 and "SpatialTransformer" in str(type(block[1])):
             module = block[1].transformer_blocks[0].attn1
-            module.forward = module._uninjected_forward
-            delattr(module, 'injection_schedule')
-            delattr(module, '_uninjected_forward')
+            if hasattr(module, '_uninjected_forward'):
+                module.forward = module._uninjected_forward
+                delattr(module, 'injection_schedule')
+                delattr(module, '_uninjected_forward')
 
 
 def register_conv_inj(model, injection_schedule):
     def conv_forward(self):
         def forward(x, emb):
-            print('!!!! conv_forward called')
+            # print('!!!! conv_forward called')
             if self.updown:
                 in_rest, in_conv = self.in_layers[:-1], self.in_layers[-1]
                 h = in_rest(x)
@@ -159,14 +149,11 @@ def register_conv_inj(model, injection_schedule):
                 bs = int(h.shape[0] // 3)
                 h[:bs] = h[bs:2*bs]
                 h[2*bs:] = h[bs:2*bs]
-                print('**** conv injection done')
+                # print('**** conv injection done')
 
             return self.skip_connection(x) + h
         return forward
 
-    # conv_module = model.UNetModel.output_blocks[1].ResBlock[1]
-    # conv_module = model.output_blocks[1][0][1]
-    # conv_module._forward = conv_forward(conv_module)
 
     conv_modules = model.output_blocks[4][0]
     conv_modules._uninjected_forward = conv_modules._forward
@@ -176,6 +163,7 @@ def register_conv_inj(model, injection_schedule):
 def unregister_conv_inj(model):
 
     conv_modules = model.output_blocks[4][0]
-    conv_modules._forward = conv_modules._uninjected_forward
-    delattr(conv_modules, 'injection_schedule')
-    delattr(conv_modules, '_uninjected_forward')
+    if hasattr(conv_modules, '_uninjected_forward'):
+        conv_modules._forward = conv_modules._uninjected_forward
+        delattr(conv_modules, 'injection_schedule')
+        delattr(conv_modules, '_uninjected_forward')

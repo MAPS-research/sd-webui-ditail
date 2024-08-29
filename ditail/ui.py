@@ -60,13 +60,13 @@ def ditailui(
     w = Widgets()
     eid = partial(elem_id, is_img2img=is_img2img)
 
-    print('!! check pwd', os.getcwd())
+    # print('!! check pwd', os.getcwd())
 
 
     with gr.Accordion(DITAIL, open=False, elem_id=eid("main_accordion")):
         cont_image = gr.Image(
                             label="content image",
-                            value='./extensions/sd-webui-ditail/test_imgs/Cocktail.jpg',
+                            value='./extensions/sd-webui-ditail/placeholder_imgs/Cocktail.jpg',
                             source="upload",
                             # brush_radius=20,
                             mirror_webcam=False,
@@ -115,27 +115,12 @@ def ditailui(
             )
 
         with gr.Group():
-            # w.inv_prompt = gr.Textbox(
-            #     label=w.attr2name("inv_prompt"),
-            #     show_label=False,
-            #     lines=3,
-            #     placeholder=w.attr2name("inv_prompt") + "\nMain prompt will be used if left empty",
-            #     elem_id=eid("inv_prompt"),
-            # )
-
-            # w.inv_negative_prompt = gr.Textbox(
-            #     label=w.attr2name("inv_negative_prompt"),
-            #     show_label=False,
-            #     lines=2,
-            #     placeholder=w.attr2name("inv_negative_prompt") + "\nMain negative prompt will be used if left empty",
-            #     elem_id=eid("inv_negative_prompt"),
-            # )
 
             with gr.Row():
                 w.ditail_alpha = gr.Slider(
                     minimum=0.0,
                     maximum=10.0,
-                    value=3.0,
+                    value=5.0,
                     step=0.1,
                     # label="positive prompt scaling (alpha)",
                     label=w.attr2name("ditail_alpha"),

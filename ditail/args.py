@@ -65,9 +65,9 @@ _all_args = [
     ("ditail_beta", "Negative Prompt Scaling (Beta)"),
     ("conv_ratio", "Convolutional Ratio"),
     ("attn_ratio", "Attention Ratio"),
-    ("inv_steps", "Inversion Steps"),
-    ("inv_sampler_name", "Inversion Sampler"),
-    ("inv_scheduler_name", "Inversion Scheduler"),
+    # ("inv_steps", "Inversion Steps"),
+    # ("inv_sampler_name", "Inversion Sampler"),
+    # ("inv_scheduler_name", "Inversion Scheduler"),
 ]
 
 _args = [Arg(*args) for args in _all_args]
