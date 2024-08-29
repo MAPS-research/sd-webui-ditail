@@ -52,8 +52,6 @@ def register_attn_inj(model, injection_schedule=None):
             to_out = to_out[0]
         
         def forward(x, context=None, mask=None):
-            # print('!!!! sa_forward called')
-            # batch_size, seqence_length, dim = x.shape
             h = self.heads
 
             q = self.to_q(x)
@@ -61,9 +59,7 @@ def register_attn_inj(model, injection_schedule=None):
             context = context if context is not None else x
             k = self.to_k(context)
             v = self.to_v(context)
-            # if not is_cross and self.injection_schedule is not None and (
-            #     self.t in self.injection_schedule or self.t == 1000):
-            
+
             if not is_cross and self.injection_schedule is not None and self.t in self.injection_schedule:
                 bs = int(q.shape[0] // 3)
                 # inject pos chunk
@@ -72,10 +68,6 @@ def register_attn_inj(model, injection_schedule=None):
                 # inject neg chunk
                 q[2*bs:] = q[bs:2*bs]
                 k[2*bs:] = k[bs:2*bs]
-                # print('**** attn injection done')
-
-            # else:
-            #     print('!!!! context shape', context.shape)
 
             q, k, v = map(lambda t: rearrange(t, 'b n (h d) -> (b h) n d', h=h), (q, k, v))
 
@@ -122,7 +114,6 @@ def unregister_attn_inj(model):
 def register_conv_inj(model, injection_schedule):
     def conv_forward(self):
         def forward(x, emb):
-            # print('!!!! conv_forward called')
             if self.updown:
                 in_rest, in_conv = self.in_layers[:-1], self.in_layers[-1]
                 h = in_rest(x)
@@ -143,13 +134,10 @@ def register_conv_inj(model, injection_schedule):
                 h = h + emb_out
                 h = self.out_layers(h)
 
-            # if self.injection_schedule is not None and (
-            #     self.t in self.injection_schedule or self.t == 1000):
             if self.injection_schedule is not None and self.t in self.injection_schedule:
                 bs = int(h.shape[0] // 3)
                 h[:bs] = h[bs:2*bs]
                 h[2*bs:] = h[bs:2*bs]
-                # print('**** conv injection done')
 
             return self.skip_connection(x) + h
         return forward

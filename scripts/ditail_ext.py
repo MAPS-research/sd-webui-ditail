@@ -102,9 +102,7 @@ class DitailScript(scripts.Script):
         components, infotext_fields = ditailui(is_img2img, webui_info)
         if is_img2img:
             components[0] = self.img2img_image
-        # components = self.replace_components(components, is_img2img)
         self.infotext_fields = infotext_fields 
-        # print("!! check components", components)
         
         enable_ditail_checkbox = components[1]
         enable_ditail_checkbox.select(fn=self.switch_ditail_onoff, inputs=[enable_ditail_checkbox], outputs=[self.sampler_component, self.scheduler_component])
@@ -130,30 +128,24 @@ class DitailScript(scripts.Script):
             )
 
     def enable_ditail_callback(self, p, ditail_args: DitailArgs):
-        pass
         print('[-] Ditail enabled')
 
         # preprocess ditail_args.src_img
         # TODO: make resize mode configurable in UI
         ditail_args.src_img = modules.images.resize_image(resize_mode="0", im=ditail_args.src_img, width=p.width, height=p.height, upscaler_name=None)
         # other src_img preprocessing are done in extrac_features.py
-        # print('!! check src img', ditail_args.src_img.size)
 
         # replace pipeline to img2img
         self.original_model_cond_stage_key = shared.sd_model.cond_stage_key
         self.swap_xxx2img_pipeline(p, init_images=[ditail_args.src_img])
 
         self.load_model(ditail_args.src_model_name, ditail_args.src_vae_name, for_inv=True)
-        # print('!!!! check original checkpoint name', self.original_checkpoint_name)
 
         self.timesteps_sched, self.sigmas_sched = self.get_scheduler_timesteps(p) # timesteps_sched example: [1.0, 51.0, 101.0, 151.0 ... ]
-
         self.latents, self.z_enc = self.extract_latents(p, ditail_args, shared.sd_model, self.timesteps_sched, self.sigmas_sched)
 
         self.load_model(self.original_checkpoint_name, self.original_vae_name, for_inv=False)
         shared.sd_model.cond_stage_key = "edit"
-        # print('!!!! check the current process pipeline class', p.__class__)
-        # print('!!!! check the current cond_stage_key', shared.sd_model.cond_stage_key)
 
         conv_threshold = int(ditail_args.conv_ratio * len(self.timesteps_sched))
         attn_threshold = int(ditail_args.attn_ratio * len(self.timesteps_sched))
@@ -165,7 +157,7 @@ class DitailScript(scripts.Script):
         script_callbacks.on_cfg_denoiser(self.sampling_loop_start_callback)
 
     def disable_ditail_callback(self, p, ditail_args: DitailArgs):
-        print('[-] Ditail disabled')
+        # print('[-] Ditail disabled')
 
         # reset the model condition stage key
         if self.original_model_cond_stage_key:
@@ -203,8 +195,6 @@ class DitailScript(scripts.Script):
     
     def get_scheduler_timesteps(self, p):
         sampler_name, scheduler_name = get_sampler_and_scheduler(p.sampler_name, p.scheduler)
-        # print('!! sampler name', p.sampler, self.sampler_name, sampler_name, scheduler_name)
-
         sampler = all_samplers_map.get(sampler_name)
         sampler_class = sampler.constructor(shared.sd_model)
         sampler_class.config = sampler
@@ -219,7 +209,6 @@ class DitailScript(scripts.Script):
         return timesteps_sched, sigmas_sched
 
     def process(self, p, *args):
-        # print('!!!! check args', args)
         # map args to ditail_args
         ditail_args = DitailArgs()
         ditail_args.src_img = args[0]
@@ -235,8 +224,6 @@ class DitailScript(scripts.Script):
         
         if self.ditail_process_callback is not None:
             self.ditail_process_callback(p, ditail_args)
-
-        # print('!! check p class', p.__class__)
 
     def swap_xxx2img_pipeline(self, p, init_images: list):
         self.original_processing_pipeline = p.__class__
@@ -270,8 +257,6 @@ class DitailScript(scripts.Script):
         return None
 
     def load_model(self, checkpoint_name, vae_name=None, for_inv=True):
-        # print('!!!! original checkpoint name', self.original_checkpoint_name)
-        # print('!!!! checkpoint name to load', checkpoint_name)
         shared.opts.sd_vae_overrides_per_model_preferences = True
         if shared.opts.sd_model_checkpoint != checkpoint_name:
             if for_inv:
@@ -282,14 +267,10 @@ class DitailScript(scripts.Script):
             if vae_name is not None and shared.opts.sd_vae != vae_name:
                 shared.opts.sd_vae = vae_name
             checkpoint_info = sd_models.get_closet_checkpoint_match(checkpoint_name)
-            # reloaded_model = sd_models.reload_model_weights(info = checkpoint_info)
             self.func_trial(sd_models.reload_model_weights, 2, info = checkpoint_info)
-
-        # print('!!!! model loaded as', shared.opts.sd_model_checkpoint)
     
     def extract_latents(self, p, ditail_args: DitailArgs, model, timesteps_sched, sigmas_sched, seed=42):
         extracter = ExtractLatent()
-
         assert timesteps_sched is not None, "Timesteps scheduler is not set"
 
         latents, z_enc = extracter.extract(
@@ -308,8 +289,6 @@ class DitailScript(scripts.Script):
         return latents, z_enc
     
     def sampling_loop_start_callback(self, params):
-        # print('x size', params.x.shape)
-
         # replace the image condition chunk with the extracted latent for injection
         params.x[1] = self.latents[params.sigma[0].item()]
         params.image_cond = torch.zeros_like(params.image_cond)
