@@ -34,8 +34,8 @@ class ArgsList(UserList):
         return tuple(name for _, name in self)
 
 class DitailArgs(BaseModel, extra=Extra.forbid, arbitrary_types_allowed = True):
-    # enable_ditail: bool = False
     src_img: Image.Image = None
+    enable_ditail: bool = False
     # src_sd_model = None
     src_model_name: str = ""
     src_vae_name: str = ""

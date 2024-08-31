@@ -10,6 +10,7 @@ from PIL import Image
 from pytorch_lightning import seed_everything
 
 from modules.shared import device
+from modules.devices import dtype
 from ldm.models.diffusion.ddim import DDIMSampler
 
 class DDIMInverse(DDIMSampler):
@@ -88,7 +89,9 @@ class ExtractLatent:
         init_image = np.array(init_image).astype(np.float32) / 255.0
         init_image = np.moveaxis(init_image, 2, 0)
         init_image = 2.0 * init_image - 1.0
-        init_image = torch.from_numpy(init_image).unsqueeze(0).to(self.device)
+        init_image = torch.from_numpy(init_image).unsqueeze(0).to(dtype).to(self.device)
+        # print("!!!! init_image dtype: ", init_image.dtype)
+        # print('!!!! system dtype: ', dtype)
 
         init_latent = model.get_first_stage_encoding(model.encode_first_stage(init_image))
 

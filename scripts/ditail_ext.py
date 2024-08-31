@@ -3,6 +3,7 @@ import copy
 import os
 import sys
 import platform
+from dataclasses import dataclass, asdict
 from functools import partial
 from textwrap import dedent
 from typing import TYPE_CHECKING, Any, NamedTuple
@@ -10,6 +11,7 @@ from typing import TYPE_CHECKING, Any, NamedTuple
 import numpy as np
 import gradio as gr
 import pickle
+import json
 import torch
 from tqdm import tqdm
 from PIL import Image
@@ -35,6 +37,7 @@ from ditail.ui import WebuiInfo, ditailui
 from ditail.extract_features import ExtractLatent
 from ditail.register_forward import register_attn_inj, unregister_attn_inj, register_conv_inj, unregister_conv_inj, register_time
 
+quote_swap = str.maketrans('\'"', '"\'')
 txt2img_submit_button = img2img_submit_button = None
 
 print(
@@ -51,8 +54,8 @@ class DitailScript(scripts.Script):
         self.original_processing_pipeline = None
         self.original_checkpoint_name = None
         self.original_vae_name = None
-        self.is_ditail_enabled = False
-        self.ditail_process_callback = self.disable_ditail_callback # set to disable by default
+
+        self.ditail_process_callback = None
     
     def __repr__(self):
         return f"{self.__class__.__name__}(version={__version__})"
@@ -105,27 +108,46 @@ class DitailScript(scripts.Script):
         self.infotext_fields = infotext_fields 
         
         enable_ditail_checkbox = components[1]
-        enable_ditail_checkbox.select(fn=self.switch_ditail_onoff, inputs=[enable_ditail_checkbox], outputs=[self.sampler_component, self.scheduler_component])
+        sampler_state = gr.State({"orig_sampler": None, "orig_scheduler": None})
+        enable_ditail_checkbox.select(fn=self.sampler_fix_onoff, inputs=[enable_ditail_checkbox, sampler_state, self.sampler_component, self.scheduler_component], outputs=[sampler_state, self.sampler_component, self.scheduler_component])
 
         return components
 
 
-    def switch_ditail_onoff(self, checkbox_value):
-        if checkbox_value:
-            self.is_ditail_enabled = True
-            self.ditail_process_callback = self.enable_ditail_callback
+    def sampler_fix_onoff(self, enable_ditail, sampler_state, orig_sampler, orig_scheduler):
+        if enable_ditail:
+            # self.is_ditail_enabled = True
+            # self.ditail_process_callback = self.enable_ditail_callback
+            sampler_state["orig_sampler"] = orig_sampler
+            sampler_state["orig_scheduler"] = orig_scheduler
+
             return (
+                sampler_state,
                 gr.Dropdown.update(interactive=False, value="DDIM"),
                 gr.Dropdown.update(interactive=False, value="Automatic"),
             )
 
         else:
-            self.is_ditail_enabled = False
-            self.ditail_process_callback = self.disable_ditail_callback
+            # self.is_ditail_enabled = False
+            # self.ditail_process_callback = self.disable_ditail_callback
+            # assert self.original_sampler_name is not None and self.original_scheduler_name is not None, "Original sampler and scheduler names are not set"
+            assert sampler_state["orig_sampler"] is not None and sampler_state["orig_scheduler"] is not None, "Original sampler and scheduler names are not set"
+
             return (
-                gr.Dropdown.update(interactive=True),
-                gr.Dropdown.update(interactive=True)
+                sampler_state,
+                gr.Dropdown.update(interactive=True, value=sampler_state["orig_sampler"]),
+                gr.Dropdown.update(interactive=True, value=sampler_state["orig_scheduler"]),
             )
+        
+    def decode_infotext(infotext, params):
+        """
+        this function is called when webui pastes infotext,
+        here we decode our quote swapped json string back to a dictionary
+        """
+        try:
+            params['ditail args'] = json.loads(params['ditail args'].translate(quote_swap))
+        except Exception:
+            pass
 
     def enable_ditail_callback(self, p, ditail_args: DitailArgs):
         print('[-] Ditail enabled')
@@ -153,8 +175,17 @@ class DitailScript(scripts.Script):
         register_conv_inj(shared.sd_model.model.diffusion_model, injection_schedule=reversed(self.timesteps_sched)[:conv_threshold])
         register_attn_inj(shared.sd_model.model.diffusion_model, injection_schedule=reversed(self.timesteps_sched)[:attn_threshold])
 
+        # add infotext
+        infotext_dict = ditail_args.__dict__
+        infotext_dict.pop('src_img', None)
+        infotext_qs_json = json.dumps(infotext_dict).translate(quote_swap)
+        p.extra_generation_params['ditail args'] = infotext_qs_json
+
+        script_callbacks.on_infotext_pasted(self.decode_infotext)
+
         # add sampling loop callback for feature injection
         script_callbacks.on_cfg_denoiser(self.sampling_loop_start_callback)
+        
 
     def disable_ditail_callback(self, p, ditail_args: DitailArgs):
         # print('[-] Ditail disabled')
@@ -175,8 +206,12 @@ class DitailScript(scripts.Script):
         unregister_conv_inj(shared.sd_model.model.diffusion_model)
         unregister_attn_inj(shared.sd_model.model.diffusion_model)
         
+        # remove infotext
+        p.extra_generation_params.pop('infotext dict', None)
+        script_callbacks.remove_callbacks_for_function(self.decode_infotext)
+
         # remove sampling loop callback
-        script_callbacks.remove_current_script_callbacks()
+        script_callbacks.remove_callbacks_for_function(self.sampling_loop_start_callback)
 
     
     def replace_empty_args(self, p, ditail_args: DitailArgs) -> DitailArgs:
@@ -211,18 +246,22 @@ class DitailScript(scripts.Script):
     def process(self, p, *args):
         # map args to ditail_args
         ditail_args = DitailArgs()
-        ditail_args.src_img = args[0]
-        for k, v in args[2].items():
-            setattr(ditail_args, k, v)
-        
-        ditail_args = self.replace_empty_args(p, ditail_args)
-
+        ditail_args.src_img, ditail_args.enable_ditail = args[0], args[1]
         if ditail_args.src_img is None:
-            self.is_ditail_enabled = False
-            self.ditail_process_callback = self.disable_ditail_callback
-            print('[!] ditail is not working because no source image is provided')
-        
-        if self.ditail_process_callback is not None:
+            ditail_args.enable_ditail = False
+
+        if ditail_args.enable_ditail == False and self.ditail_process_callback is None:
+            # ditial is never enabled, do nothing
+            return
+        else:
+            for k, v in args[2].items():
+                setattr(ditail_args, k, v)
+            ditail_args = self.replace_empty_args(p, ditail_args)
+            if ditail_args.enable_ditail:
+                self.ditail_process_callback = self.enable_ditail_callback
+            else:
+                # clear up modifications made by ditail
+                self.ditail_process_callback = self.disable_ditail_callback
             self.ditail_process_callback(p, ditail_args)
 
     def swap_xxx2img_pipeline(self, p, init_images: list):
@@ -308,5 +347,5 @@ class DitailScript(scripts.Script):
 
     def post_sample(self, p, ps: scripts.PostSampleArgs, *args):
         # clear up callbacks
-        script_callbacks.remove_current_script_callbacks()
-
+        script_callbacks.remove_callbacks_for_function(self.sampling_loop_start_callback)
+        script_callbacks.remove_callbacks_for_function(self.decode_infotext)
