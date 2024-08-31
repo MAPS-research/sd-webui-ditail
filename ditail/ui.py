@@ -60,9 +60,6 @@ def ditailui(
     w = Widgets()
     eid = partial(elem_id, is_img2img=is_img2img)
 
-    # print('!! check pwd', os.getcwd())
-
-
     with gr.Accordion(DITAIL, open=False, elem_id=eid("main_accordion")):
         cont_image = gr.Image(
                             label="content image",
@@ -74,7 +71,6 @@ def ditailui(
                             # tool="sketch",
                             elem_id=eid("cont_image"),
                             visible=not is_img2img
-                            # elem_classes=["ditail-image"],
                             # brush_color=shared.opts.img2img_inpaint_mask_brush_color
                             # if hasattr(
                             #     shared.opts, "img2img_inpaint_mask_brush_color"
@@ -122,7 +118,6 @@ def ditailui(
                     maximum=10.0,
                     value=5.0,
                     step=0.1,
-                    # label="positive prompt scaling (alpha)",
                     label=w.attr2name("ditail_alpha"),
                     elem_id=eid("ditail_alpha"),
                     interactive=True,
@@ -134,7 +129,6 @@ def ditailui(
                     maximum=10.0,
                     value=0.5,
                     step=0.1,
-                    # label="negative prompt scaling (beta)",
                     label=w.attr2name("ditail_beta"),
                     elem_id=eid("ditail_beta"),
                     interactive=True,
@@ -189,10 +183,6 @@ def ditailui(
             on_change = partial(on_widget_change, attr=attr)
             widget.change(on_change, inputs=[state, widget], outputs=state, queue=False)
 
-    # infotext_fields.append((src_model_name, "Source Checkpoint"))
-    # infotext_fields.append((src_vae_name, "Source VAE"))
-    # infotext_fields.append((ditail_alpha, "Positive Prompt Scaling Weight"))
-    # infotext_fields.append((ditail_beta, "Negative Prompt Scaling Weight"))
     infotext_fields.extend([
         (getattr(w, attr), name) for attr, name in ALL_ARGS
     ])
@@ -200,8 +190,6 @@ def ditailui(
     states.append(state)
     
     components = [cont_image, ditail_enable, *states]
-
-    # components = [cont_image, ditail_enable, src_model_name, src_vae_name, ditail_alpha, ditail_beta]
     return components, infotext_fields
         
 

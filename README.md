@@ -39,7 +39,7 @@ Two use cases of Ditail are as follows:
   <img src="./assets/Pipeline.png" alt="Ditail Pipeline Illustration">
 </p>
 
-In this example, inversion prompt and generation prompt are both set as 'a glass of orange juice'. Optionally, you can use different prompts for inversion and generation. Check 'Positive Inversion Prompt' and 'Negative Inversion Prompt' below for more details.
+In this example, the image is transformed from a photorealistic style to an anime style. Both the inversion prompt and generation prompt are set to ‘a glass of orange juice.’ You can optionally use different prompts for inversion and generation. For more details, refer to ‘Positive Inversion Prompt’ and ‘Negative Inversion Prompt’ below.
 
 **Basic Options:**
 | Name | Description | Default Value |

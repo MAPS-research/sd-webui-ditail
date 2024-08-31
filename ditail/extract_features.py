@@ -25,8 +25,6 @@ class DDIMInverse(DDIMSampler):
             iterator = range(1, T, c)
             sigmas_sched = [self.model.sqrt_one_minus_alphas_cumprod[t] for t in iterator]
         self.sigmas_sched = [float(s) for s in reversed(sigmas_sched)]
-        # print('!! timesteps_sched', self.timesteps_sched)
-        # print('!! sigmas_sched', self.sigmas_sched)
 
     def encode_ddim(self, 
                     img, 
@@ -34,7 +32,6 @@ class DDIMInverse(DDIMSampler):
                     conditioning,
         ):
         latents = {}
-        # print(f"Running DDIM inversion with {num_steps} steps")
 
         latents[self.timesteps_sched[0]] = img
         for i in tqdm(range(1, len(self.timesteps_sched)), desc="DDIM inversion"):
@@ -85,7 +82,6 @@ class ExtractLatent:
         pos_c = model.get_learned_conditioning([positive_prompt])
         neg_c = model.get_learned_conditioning([negative_prompt])
         c = alpha * pos_c - beta * neg_c
-        # print('!! c shape', c.shape)
 
         z_enc = None
         # turn init_image to tensor
@@ -97,7 +93,6 @@ class ExtractLatent:
         init_latent = model.get_first_stage_encoding(model.encode_first_stage(init_image))
 
         latent_check = model.decode_first_stage(init_latent)
-        # latent_check = torch.clamp((latent_check+1.0)/2.0, 0.0, 1.0)
         latent_check = latent_check[0].permute(1, 2, 0).cpu().numpy()
 
         latents, z_enc = sampler.encode_ddim(
