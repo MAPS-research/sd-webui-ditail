@@ -60,11 +60,9 @@ def ditailui(
     w = Widgets()
     eid = partial(elem_id, is_img2img=is_img2img)
 
-    # with gr.Accordion(DITAIL, open=False, elem_id=eid("main_accordion")):
     with InputAccordion(False, label=f"{DITAIL} v{__version__}", elem_id=eid("main_accordion")) as ditail_enable:
         cont_image = gr.Image(
                             label="content image",
-                            # value='./extensions/sd-webui-ditail/placeholder_imgs/Cocktail.jpg',
                             source="upload",
                             # brush_radius=20,
                             mirror_webcam=False,
@@ -78,21 +76,6 @@ def ditailui(
                             # )
                             # else None,
                         ) 
-
-        # with gr.Row():
-            # with gr.Column():
-            #     ditail_enable = gr.Checkbox(
-            #         label = "Enable Ditail",
-            #         value=False,
-            #         visible=True,
-            #         elem_id=eid("enable_ditail")
-            #     )
-
-            # with gr.Column():
-            #     gr.Markdown(
-            #         f"v{__version__}",
-            #         elem_id=eid("version"),
-            #     )
         
         infotext_fields.append((ditail_enable, "Ditail enabled"))
 
