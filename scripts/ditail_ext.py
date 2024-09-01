@@ -54,8 +54,6 @@ class DitailScript(scripts.Script):
         self.original_processing_pipeline = None
         self.original_checkpoint_name = None
         self.original_vae_name = None
-
-        self.ditail_process_callback = None
     
     def __repr__(self):
         return f"{self.__class__.__name__}(version={__version__})"
@@ -116,8 +114,6 @@ class DitailScript(scripts.Script):
 
     def sampler_fix_onoff(self, enable_ditail, sampler_state, orig_sampler, orig_scheduler):
         if enable_ditail:
-            # self.is_ditail_enabled = True
-            # self.ditail_process_callback = self.enable_ditail_callback
             sampler_state["orig_sampler"] = orig_sampler
             sampler_state["orig_scheduler"] = orig_scheduler
 
@@ -128,8 +124,6 @@ class DitailScript(scripts.Script):
             )
 
         else:
-            # self.is_ditail_enabled = False
-            # self.ditail_process_callback = self.disable_ditail_callback
             # assert self.original_sampler_name is not None and self.original_scheduler_name is not None, "Original sampler and scheduler names are not set"
             assert sampler_state["orig_sampler"] is not None and sampler_state["orig_scheduler"] is not None, "Original sampler and scheduler names are not set"
 
@@ -187,9 +181,7 @@ class DitailScript(scripts.Script):
         script_callbacks.on_cfg_denoiser(self.sampling_loop_start_callback)
         
 
-    def disable_ditail_callback(self, p, ditail_args: DitailArgs):
-        # print('[-] Ditail disabled')
-
+    def disable_ditail_callback(self, p):
         # reset the model condition stage key
         if self.original_model_cond_stage_key:
             shared.sd_model.cond_stage_key = self.original_model_cond_stage_key
@@ -250,19 +242,14 @@ class DitailScript(scripts.Script):
         if ditail_args.src_img is None:
             ditail_args.enable_ditail = False
 
-        if ditail_args.enable_ditail == False and self.ditail_process_callback is None:
-            # ditial is never enabled, do nothing
-            return
-        else:
+        if ditail_args.enable_ditail:
             for k, v in args[2].items():
                 setattr(ditail_args, k, v)
             ditail_args = self.replace_empty_args(p, ditail_args)
-            if ditail_args.enable_ditail:
-                self.ditail_process_callback = self.enable_ditail_callback
-            else:
-                # clear up modifications made by ditail
-                self.ditail_process_callback = self.disable_ditail_callback
-            self.ditail_process_callback(p, ditail_args)
+            self.enable_ditail_callback(p, ditail_args)
+        else:
+            # do nothing if ditail is not enabled
+            return
 
     def swap_xxx2img_pipeline(self, p, init_images: list):
         self.original_processing_pipeline = p.__class__
@@ -272,10 +259,12 @@ class DitailScript(scripts.Script):
             if hasattr(p, k):
                 continue
             setattr(p, k, v)
-        p.init_images = init_images
-        p.initial_noise_multiplier = 1.0
-        p.image_cfg_scale = p.cfg_scale
-        p.denoising_strength = 1.0
+
+        if self.original_processing_pipeline != p.__class__: # we need to set img2img exclusive attributes if we swap Txt2Img to Img2Img
+            p.init_images = init_images
+            p.initial_noise_multiplier = 1.0
+            p.image_cfg_scale = p.cfg_scale
+            p.denoising_strength = 1.0
     
     def swap_xxx2orig_pipeline(self, p):
         dummy = self.original_processing_pipeline()
@@ -346,6 +335,6 @@ class DitailScript(scripts.Script):
             self.scheduler_component = component
 
     def post_sample(self, p, ps: scripts.PostSampleArgs, *args):
-        # clear up callbacks
-        script_callbacks.remove_callbacks_for_function(self.sampling_loop_start_callback)
-        script_callbacks.remove_callbacks_for_function(self.decode_infotext)
+        # disable ditail after processing is done
+        self.disable_ditail_callback(p)
+
