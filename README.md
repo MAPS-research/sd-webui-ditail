@@ -79,7 +79,7 @@ This work is supported in part by the Shanghai Frontiers Science Center of Artif
 If you find our work helpful, please consider cite it as follows:
 ```bibtex
 @article{liu2023ditail,
-  title={Diffusion Cocktail: Fused Generation from Diffusion Models},
+  title={Diffusion Cocktail: Mixing Domain-Specific Diffusion Models for Diversified Image Generations},
   author={Liu, Haoming and Guo, Yuanhe and Wang, Shengjie and Wen, Hongyi},
   journal={arXiv preprint arXiv:2312.08873},
   year={2023}
