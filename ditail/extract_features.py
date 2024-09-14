@@ -90,8 +90,7 @@ class ExtractLatent:
         # print("!!!! init_image dtype: ", init_image.dtype)
         # print('!!!! system dtype: ', dtype)
 
-        init_latent = model.get_first_stage_encoding(model.encode_first_stage(init_image))
-
+        init_latent = model.get_first_stage_encoding(model.encode_first_stage(init_image)).to(model.dtype)
         latent_check = model.decode_first_stage(init_latent)
         latent_check = latent_check[0].permute(1, 2, 0).cpu().numpy()
 
