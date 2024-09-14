@@ -1,4 +1,3 @@
-import os
 from dataclasses import dataclass
 from functools import partial
 from types import SimpleNamespace
@@ -9,6 +8,7 @@ import gradio as gr
 from modules.ui_components import InputAccordion
 from ditail import DITAIL, __version__
 from ditail.args import ALL_ARGS
+
 
 class Widgets(SimpleNamespace):
     def tolist(self):
@@ -22,6 +22,7 @@ class Widgets(SimpleNamespace):
         idx = ALL_ARGS.names.index(name)
         return ALL_ARGS.attrs[idx]
 
+
 @dataclass
 class WebuiInfo:
     # sampler_names: list[str]
@@ -30,12 +31,15 @@ class WebuiInfo:
     t2i_button: gr.Button
     i2i_button: gr.Button
 
-def elem_id(item_id:str, is_img2img:bool) -> str:
+
+def elem_id(item_id: str, is_img2img: bool) -> str:
     tab = "img2img" if is_img2img else "txt2img"
     return f"{tab}_ditail_{item_id}"
 
+
 def state_init(w: Widgets) -> dict[str, Any]:
     return {attr: getattr(w, attr).value for attr in ALL_ARGS.attrs}
+
 
 def on_widget_change(state: dict, value: Any, *, attr: str):
     if "is_api" in state:
@@ -44,17 +48,19 @@ def on_widget_change(state: dict, value: Any, *, attr: str):
     state[attr] = value
     return state
 
+
 def on_generate_click(state: dict, *values: Any):
     for attr, value in zip(ALL_ARGS.attrs, values):
         state[attr] = value
     state["is_api"] = ()
     return state
 
+
 def ditailui(
     is_img2img: bool,
     webui_info: WebuiInfo,
 ):
-    
+
     states = []
     infotext_fields = []
     w = Widgets()
@@ -62,21 +68,21 @@ def ditailui(
 
     with InputAccordion(False, label=f"{DITAIL} v{__version__}", elem_id=eid("main_accordion")) as ditail_enable:
         cont_image = gr.Image(
-                            label="content image",
-                            source="upload",
-                            # brush_radius=20,
-                            mirror_webcam=False,
-                            type="pil",
-                            # tool="sketch",
-                            elem_id=eid("cont_image"),
-                            visible=not is_img2img
-                            # brush_color=shared.opts.img2img_inpaint_mask_brush_color
-                            # if hasattr(
-                            #     shared.opts, "img2img_inpaint_mask_brush_color"
-                            # )
-                            # else None,
-                        ) 
-        
+            label="content image",
+            source="upload",
+            # brush_radius=20,
+            mirror_webcam=False,
+            type="pil",
+            # tool="sketch",
+            elem_id=eid("cont_image"),
+            visible=not is_img2img
+            # brush_color=shared.opts.img2img_inpaint_mask_brush_color
+            # if hasattr(
+            #     shared.opts, "img2img_inpaint_mask_brush_color"
+            # )
+            # else None,
+        )
+
         infotext_fields.append((ditail_enable, "Ditail enabled"))
 
         with gr.Row():
@@ -118,7 +124,6 @@ def ditailui(
                     interactive=True,
                     visible=True
                 )
-
 
         with gr.Accordion("Extra Options", open=False, elem_id=eid("extra_options_accordion")):
             w.inv_prompt = gr.Textbox(
@@ -172,12 +177,6 @@ def ditailui(
     ])
 
     states.append(state)
-    
+
     components = [cont_image, ditail_enable, *states]
     return components, infotext_fields
-        
-
-        
-
-
-    
