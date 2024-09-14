@@ -116,6 +116,7 @@ class DitailScript(scripts.Script):
                 gr.Dropdown.update(interactive=True, value=sampler_state["orig_scheduler"]),
             )
 
+    @staticmethod
     def decode_infotext(infotext, params):
         """
         this function is called when webui pastes infotext,
@@ -155,10 +156,9 @@ class DitailScript(scripts.Script):
         # add infotext
         infotext_dict = ditail_args.__dict__
         infotext_dict.pop('src_img', None)
+        infotext_dict.pop('enable_ditail', None)
         infotext_qs_json = json.dumps(infotext_dict).translate(quote_swap)
         p.extra_generation_params['ditail args'] = infotext_qs_json
-
-        script_callbacks.on_infotext_pasted(self.decode_infotext)
 
         # add sampling loop callback for feature injection
         script_callbacks.on_cfg_denoiser(self.sampling_loop_start_callback)
@@ -182,7 +182,6 @@ class DitailScript(scripts.Script):
 
         # remove infotext
         p.extra_generation_params.pop('infotext dict', None)
-        script_callbacks.remove_callbacks_for_function(self.decode_infotext)
 
         # remove sampling loop callback
         script_callbacks.remove_callbacks_for_function(self.sampling_loop_start_callback)
@@ -316,3 +315,6 @@ class DitailScript(scripts.Script):
     def post_sample(self, p, ps: scripts.PostSampleArgs, *args):
         # disable ditail after processing is done
         self.disable_ditail_callback(p)
+
+
+script_callbacks.on_infotext_pasted(DitailScript.decode_infotext)

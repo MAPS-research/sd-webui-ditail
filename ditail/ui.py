@@ -83,7 +83,7 @@ def ditailui(
             # else None,
         )
 
-        infotext_fields.append((ditail_enable, "Ditail enabled"))
+        infotext_fields.append((ditail_enable, lambda d: 'ditail args' in d))
 
         with gr.Row():
             w.src_model_name = gr.Dropdown(
@@ -172,9 +172,11 @@ def ditailui(
             on_change = partial(on_widget_change, attr=attr)
             widget.change(on_change, inputs=[state, widget], outputs=state, queue=False)
 
-    infotext_fields.extend([
-        (getattr(w, attr), name) for attr, name in ALL_ARGS
-    ])
+    def read_params(d, attr_key):
+        if 'ditail args' in d:
+            return d['ditail args'].get(attr_key)
+
+    infotext_fields.extend([(getattr(w, attr), partial(read_params, attr_key=attr)) for attr in ALL_ARGS.attrs])
 
     states.append(state)
 
