@@ -68,6 +68,7 @@ In this example, the image is transformed from a photorealistic style to an anim
 
 
 ## TODO:
+- [ ] [Fix prompt length mismatch issue](https://github.com/MAPS-research/sd-webui-ditail/pull/5)
 - [ ] SDXL support
 - [ ] Support for batch count and batch size larger than 1
 - [ ] We are also working on developing extension for comfyui. Stay tuned!
