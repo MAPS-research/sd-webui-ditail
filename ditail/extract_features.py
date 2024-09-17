@@ -1,17 +1,14 @@
-import os
-
 import torch
 import numpy as np
-import matplotlib.pyplot as plt
 
 from tqdm import tqdm
 from torch import autocast
-from PIL import Image
 from pytorch_lightning import seed_everything
 
 from modules.shared import device
 from modules.devices import dtype
 from ldm.models.diffusion.ddim import DDIMSampler
+
 
 class DDIMInverse(DDIMSampler):
     def __init__(self, model, timesteps_sched=None, sigmas_sched=None):
@@ -27,11 +24,11 @@ class DDIMInverse(DDIMSampler):
             sigmas_sched = [self.model.sqrt_one_minus_alphas_cumprod[t] for t in iterator]
         self.sigmas_sched = [float(s) for s in reversed(sigmas_sched)]
 
-    def encode_ddim(self, 
-                    img, 
-                    num_steps, 
+    def encode_ddim(self,
+                    img,
+                    num_steps,
                     conditioning,
-        ):
+                    ):
         latents = {}
 
         latents[self.timesteps_sched[0]] = img
@@ -41,22 +38,22 @@ class DDIMInverse(DDIMSampler):
         return latents, img
 
     @torch.no_grad()
-    def reverse_ddim(self, 
-                     x, 
+    def reverse_ddim(self,
+                     x,
                      step_idx,
-                     c=None, 
-                     quantize_denoised=False, #TODO: not implemented yet
-        ):
+                     c=None,
+                     quantize_denoised=False,  # TODO: not implemented yet
+                     ):
         b, *_, device = *x.shape, x.device
 
         t = torch.full((b,), self.timesteps_sched[step_idx], device=device)
-        t_prev = torch.full((b,), self.timesteps_sched[step_idx-1], device=device)
+        t_prev = torch.full((b,), self.timesteps_sched[step_idx - 1], device=device)
 
-        sigma = torch.full((b,1,1,1), self.sigmas_sched[step_idx], device=device)
-        sigma_prev = torch.full((b,1,1,1), self.sigmas_sched[step_idx-1], device=device)
+        sigma = torch.full((b, 1, 1, 1), self.sigmas_sched[step_idx], device=device)
+        sigma_prev = torch.full((b, 1, 1, 1), self.sigmas_sched[step_idx - 1], device=device)
 
         # alpha = 1-sigma**2
-        mu = torch.sqrt(1-sigma**2)
+        mu = torch.sqrt(1 - sigma ** 2)
         # alpha_prev = 1-sigma_prev**2
 
         eps = self.model.apply_model(x, t, c)
@@ -69,6 +66,7 @@ class DDIMInverse(DDIMSampler):
 
         return x_prev, pred_x0, t
 
+
 class ExtractLatent:
     def __init__(self):
         self.precision_scope = autocast
@@ -76,7 +74,6 @@ class ExtractLatent:
 
     @torch.inference_mode()
     def extract(self, init_image, model, positive_prompt, negative_prompt, timesteps_sched, sigmas_sched, alpha=3.0, beta=0.5, seed=42, ddim_inversion_steps=999):
-
         seed_everything(seed)
         sampler = DDIMInverse(model, timesteps_sched=timesteps_sched, sigmas_sched=sigmas_sched)
 
@@ -93,17 +90,14 @@ class ExtractLatent:
         # print("!!!! init_image dtype: ", init_image.dtype)
         # print('!!!! system dtype: ', dtype)
 
-        init_latent = model.get_first_stage_encoding(model.encode_first_stage(init_image))
-
+        init_latent = model.get_first_stage_encoding(model.encode_first_stage(init_image)).to(model.dtype)
         latent_check = model.decode_first_stage(init_latent)
         latent_check = latent_check[0].permute(1, 2, 0).cpu().numpy()
 
         latents, z_enc = sampler.encode_ddim(
-            init_latent, 
-            num_steps=ddim_inversion_steps, 
-            conditioning=c, 
-        ) 
+            init_latent,
+            num_steps=ddim_inversion_steps,
+            conditioning=c,
+        )
 
         return latents, z_enc
-
-
