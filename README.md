@@ -66,11 +66,18 @@ In this example, the image is transformed from a photorealistic style to an anim
 - 'Source checkpoint' should has the same structure as the 'Stable Diffusion checkpoint' in the main ui. **We only support SD1.5 checkpoints for now.** Please stay tuned for the updates.
 - To use LoRA, simply add them in the main ui prompt as you would normally do. 
 
+## Known Issues
+- Only support SD1.5 checkpoints for now. We are working on supporting SDXL checkpoints.
+- If the length of the conditions / chunk sizes are not matched, the plugin will not work properly. Please keep your prompts within 75 words for now. (Thanks to @w-2-w for pointing out this [issue](https://github.com/MAPS-research/sd-webui-ditail/pull/5))
+- FP8 checkpoints are not supported yet.
 
 ## TODO:
-- [ ] [Fix prompt length mismatch issue](https://github.com/MAPS-research/sd-webui-ditail/pull/5)
-- [ ] SDXL support
+- [ ] Fix prompt length mismatch issue
+- [ ] Add more options for resizing and cropping the source image
 - [ ] Support for batch count and batch size larger than 1
+- [ ] SDXL support
+- [ ] Flux support
+- [ ] FP8 checkpoints support
 - [ ] We are also working on developing extension for comfyui. Stay tuned!
 
 ## Acknowledgement

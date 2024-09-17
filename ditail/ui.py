@@ -104,8 +104,8 @@ def ditailui(
 
             with gr.Row():
                 w.ditail_alpha = gr.Slider(
-                    minimum=0.0,
-                    maximum=10.0,
+                    minimum=-20.0,
+                    maximum=20.0,
                     value=5.0,
                     step=0.1,
                     label=w.attr2name("ditail_alpha"),
@@ -115,8 +115,8 @@ def ditailui(
                 )
             
                 w.ditail_beta = gr.Slider(
-                    minimum=0.0,
-                    maximum=10.0,
+                    minimum=-20.0,
+                    maximum=20.0,
                     value=0.5,
                     step=0.1,
                     label=w.attr2name("ditail_beta"),
