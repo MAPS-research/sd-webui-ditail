@@ -23,6 +23,13 @@ Two use cases of Ditail are as follows:
 
 ## Install
 
+You can directly find and install from "Extensions" tab in the webui. We tagged this extension as `script`, `tab` and `editing`.
+<p align="center">
+  <img src="./assets/UI-install.png" alt="Ditail Pipeline Illustration" style="border-radius: 10px;">
+</p>
+
+OR
+
 (from Mikubill/sd-webui-controlnet)
 
 1. Open "Extensions" tab.
@@ -68,7 +75,7 @@ In this example, the image is transformed from a photorealistic style to an anim
 
 ## Known Issues
 - Only support SD1.5 checkpoints for now. We are working on supporting SDXL checkpoints.
-- If the length of the conditions / chunk sizes are not matched, the plugin will not work properly. Please keep your prompts within 75 words for now. (Thanks to @w-2-w for pointing out this [issue](https://github.com/MAPS-research/sd-webui-ditail/pull/5))
+- If the length of the conditions / chunk sizes are not matched, the plugin will not work properly. Please keep your prompts within 75 words for now. (Thanks to @w-e-w for pointing out this [issue](https://github.com/MAPS-research/sd-webui-ditail/pull/5))
 - FP8 checkpoints are not supported yet.
 
 ## TODO:
